@@ -57,10 +57,16 @@ CREATE TABLE IF NOT EXISTS transactions (
   notes           TEXT,
   source_file     TEXT,                -- which CSV row this came from (for audit)
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(broker, account, ticker, txn_type, txn_date, amount_cents, shares),
   FOREIGN KEY(ticker) REFERENCES securities(ticker)
 );
 
+-- Dedup index: NULL-safe by COALESCEing shares to a sentinel.
+-- A column-level UNIQUE wouldn't dedupe rows where shares IS NULL because
+-- SQLite treats NULLs as distinct. This index handles dividend rows
+-- (which have shares = NULL) correctly.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_dedup ON transactions(
+  broker, account, ticker, txn_type, txn_date, amount_cents, COALESCE(shares, -1)
+);
 CREATE INDEX IF NOT EXISTS idx_transactions_ticker_date ON transactions(ticker, txn_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_type_date ON transactions(txn_type, txn_date);
 
