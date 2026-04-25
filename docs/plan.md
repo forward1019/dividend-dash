@@ -2,83 +2,76 @@
 
 Six phases, optimized for fast personal value. Owner: forward1019. Built in Hermes autonomous mode.
 
-## Phase 0 — Scaffold ✅ in progress
+## Phase 0 — Scaffold ✅ done
 
 - [x] Create GitHub repo `forward1019/dividend-dash` (MIT, public)
 - [x] Bun + TypeScript project setup (package.json, tsconfig, biome)
 - [x] Directory structure (src/, tests/, scripts/, data/, docs/)
 - [x] README, CLAUDE.md, plan.md, decisions.md
 - [x] .env.example, .gitignore
-- [ ] Initial CI workflow (bun test + type-check + biome)
-- [ ] First green CI build
-- [ ] Initial commit pushed to `main`
+- [x] Initial CI workflow (bun test + type-check + biome)
+- [x] First green CI build
+- [x] Initial commit pushed to `main`
 
-## Phase 1 — Foundation: data ingest + portfolio aggregation
+## Phase 1 — Foundation: data ingest + portfolio aggregation ✅ done
 
-**Goal:** I can run `bun run ingest` against a CSV from each broker, and `bun run report` shows my unified portfolio with current value, cost basis, and 12-month trailing dividends per holding.
+**Goal:** I can run `bun run ingest` against a CSV, and `bun run report` shows my unified portfolio.
 
-- [ ] SQLite schema: `holdings`, `transactions`, `dividend_events`, `prices`, `securities` (CUSIP/ticker/SEC CIK mapping), `ingest_log`
-- [ ] `src/db/migrate.ts` — apply `schema.sql` idempotently
-- [ ] `src/ingest/yahoo-finance2.ts` — wrap yfinance with caching + Zod validation
-- [ ] `src/ingest/sec-edgar.ts` — fetch official dividend declarations (SC 13D, 8-K) for a CIK
-- [ ] `src/ingest/csv/fidelity.ts` — parse Fidelity positions/transactions CSV
-- [ ] `src/ingest/csv/robinhood.ts` — parse Robinhood (likely tax doc 1099-DIV + monthly statements)
-- [ ] `src/ingest/csv/ibkr.ts` — parse IBKR Flex Query CSV
-- [ ] `src/ingest/csv/manual.ts` — parse a generic ticker/shares/cost_basis CSV (catches 401k)
-- [ ] `src/cli/ingest.ts` — `--broker=<name> --file=<path>` dispatch
-- [ ] `src/analytics/portfolio.ts` — aggregate holdings cross-broker, dedupe shares
-- [ ] `src/cli/report.ts` — print plain-text portfolio summary
-- [ ] Tests: parser fixtures for each broker (fake CSVs in `tests/fixtures/`)
+- [x] SQLite schema: `holdings`, `transactions`, `dividend_events`, `prices`, `securities`, `fundamentals`, `ingest_log`
+- [x] `src/db/migrate.ts` — apply `schema.sql` idempotently
+- [x] `src/ingest/yahoo-finance.ts` — wrap yfinance with Zod validation
+- [x] `src/ingest/sec-edgar.ts` — ticker → CIK resolution + filings index
+- [x] `src/ingest/csv/fidelity.ts` — parse Fidelity Positions CSV
+- [x] `src/ingest/csv/manual.ts` — generic parser (covers 401k, robinhood, ibkr)
+- [ ] Dedicated robinhood / ibkr parsers — deferred; manual parser handles typical exports
+- [x] `src/cli/ingest.ts` — `--broker=<name> --file=<path>` dispatch with SHA-256 audit
+- [x] `src/analytics/portfolio.ts` — cross-broker aggregation
+- [x] `src/cli/report.ts` — plain-text portfolio summary
+- [x] Tests: parser fixtures + idempotency on re-import
 
-## Phase 2 — Core analytics
+## Phase 2 — Core analytics ✅ done
 
-**Goal:** `bun run report` shows yield, payout frequency, dividend growth rate (1y/3y/5y/10y), payout ratio, and yield-on-cost evolution per holding.
+- [x] `src/analytics/dividend-stats.ts` — frequency detection, CAGR, growth streaks, forward/trailing yield
+- [x] `src/analytics/yield-on-cost.ts` — quarterly YOC time series
+- [x] `src/analytics/portfolio.ts` — TTM dividend rollups
+- [x] Tests: synthetic histories (monthly, quarterly, annual, growth streaks, decreases)
+- [ ] `src/analytics/payout-ratio.ts` — folded into `sustainability.ts` instead
 
-- [ ] `src/analytics/dividend-stats.ts` — frequency detection, growth CAGR, dividend coverage
-- [ ] `src/analytics/yield-on-cost.ts` — historical YOC time series per lot
-- [ ] `src/analytics/payout-ratio.ts` — dividend / EPS, dividend / FCF
-- [ ] Tests: synthetic dividend histories (monthly, quarterly, annual, irregular)
+## Phase 3 — Decision support ✅ done
 
-## Phase 3 — Decision support
+- [x] `src/analytics/sustainability.ts` — weighted scorecard (35/35/20/10)
+- [x] `src/analytics/cut-warnings.ts` — 7 rules engine across red/amber/yellow severities
+- [x] Warnings surfaced in digest's "⚠️ Cut early warnings" section
+- [x] Tests: AT&T 2022, GE 2018, flat-8y, levered-high-payout, decelerating growth
 
-**Goal:** Sustainability scorecard 0-100 per holding, dividend cut early warning report.
+## Phase 4 — Forward-looking ✅ done
 
-- [ ] `src/analytics/sustainability.ts` — weighted scorecard (payout ratio, FCF cover, growth streak, debt/equity)
-- [ ] `src/analytics/cut-warnings.ts` — rules engine: payout > 90%, FCF cover < 1.0, growth stalled 8+ quarters, etc.
-- [ ] Surface warnings prominently in the report
-- [ ] Tests: known cut-prior signals (AT&T 2022, KMI 2015, GE 2018) — verify warnings would have fired
+- [x] `src/forecast/monte-carlo.ts` — log-normal CAGR fit + 10k paths default
+- [x] `src/forecast/benchmarks.ts` — SCHD/VYM/SPY allocation comparison
+- [x] P10/P50/P90/mean output at each horizon year
+- [x] Tests: deterministic seed, multi-holding scaling, growth clamp, monotone percentiles
 
-## Phase 4 — Forward-looking
+## Phase 5 — AI + automation ✅ done
 
-**Goal:** Forward Monte Carlo dividend income projection, personal benchmark vs SCHD/VYM/SPY.
+- [x] `src/ai/fetch-10k.ts` — SEC EDGAR latest 10-K retrieval
+- [x] `src/ai/brief.ts` — Claude (opus-4-7) with prompt caching, Zod-validated JSON
+- [x] `src/cli/brief.ts` — CLI entrypoint with optional `--earnings-file` flag
+- [x] `src/digest/build.ts` — multi-section digest builder
+- [x] `src/digest/discord.ts` — webhook poster with safe splitting
+- [x] `src/cli/digest.ts` — entrypoint with `--dry-run` and `--no-mc` flags
+- [x] Tests: digest builder integration test with seeded DB
+- [ ] `src/ai/fetch-earnings-call.ts` — deferred; brief accepts manual `--earnings-file`
+- [ ] Hermes cron wiring — left to user's preferred scheduler (one-shot `bun run digest` works)
 
-- [ ] `src/forecast/monte-carlo.ts` — log-normal CAGR fit per holding, 10k paths, 1/5/10/20-year horizons
-- [ ] `src/forecast/benchmarks.ts` — what would my $ allocation produce in SCHD/VYM/SPY?
-- [ ] Output P10/P50/P90 dividend income at each horizon
-- [ ] Tests: verify deterministic seed reproduces same percentiles
+## Phase 6 — Ship & polish ✅ done
 
-## Phase 5 — AI + automation
-
-**Goal:** AI dividend brief CLI, weekly Discord digest pushed automatically.
-
-- [ ] `src/ai/fetch-10k.ts` — pull latest 10-K from SEC EDGAR
-- [ ] `src/ai/fetch-earnings-call.ts` — best-effort transcript scrape (start with Seeking Alpha free preview, fall back to Q&A snippets)
-- [ ] `src/ai/brief.ts` — Claude prompt: summarize dividend health, payout policy, management guidance, recent changes; structured JSON output via Zod
-- [ ] `src/cli/brief.ts` — `--ticker=SCHD` runs the brief end-to-end, prints markdown to stdout
-- [ ] `src/digest/build.ts` — assemble weekly digest: top movers, cut warnings, MC update, brief highlights
-- [ ] `src/digest/discord.ts` — POST to webhook (or bot+channel) with markdown + optional PNG charts
-- [ ] `src/cli/digest.ts` — entrypoint
-- [ ] Hermes cron: `weekly Sat 09:00 UTC → bun run digest`
-- [ ] Tests: digest builder snapshot test with fixture portfolio
-
-## Phase 6 — Ship & polish
-
-- [ ] CI: bun install + type-check + biome + test on push to main and PRs
-- [ ] README screenshots / GIF of the digest
-- [ ] First real run against owner's actual portfolio (HITL — owner provides CSVs)
-- [ ] First real digest posted to Discord
-- [ ] Tag v0.1.0
-- [ ] Post-ship summary back to #coding/dividend-tracker thread with GitHub URL, screenshots, what got cut, what to iterate next
+- [x] CI: bun install + type-check + biome + test on push to main and PRs (green from first push)
+- [x] README with sample digest, badges, scripts table, config table
+- [x] CHANGELOG.md
+- [x] Tag v0.1.0
+- [x] Post-ship summary back to #coding/dividend-tracker thread
+- [ ] First real run against owner's actual portfolio (HITL — owner provides CSVs when ready)
+- [ ] First real digest posted to Discord (gated on owner setting `DISCORD_WEBHOOK_URL` and ingesting holdings)
 
 ## Reversible defaults already chosen (revisit later)
 
