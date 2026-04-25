@@ -229,10 +229,10 @@ export async function generateBrief(
   ticker: string,
   opts: BriefOptions = {},
 ): Promise<DividendBrief> {
+  // Throws UnsupportedFilingTypeError for ETFs, mutual funds, or foreign
+  // issuers (e.g. 20-F filers). The CLI catches that and prints a friendly
+  // message; library callers should let it propagate.
   const tenK = await fetchLatest10K(ticker);
-  if (!tenK) {
-    throw new Error(`No 10-K found for ${ticker} (likely an ETF; AI brief not applicable).`);
-  }
 
   const text = plainTextFromHtml(tenK.body);
   const focused = extractDividendSection(text, opts.maxTenKChars ?? 60_000);

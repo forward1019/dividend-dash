@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 
 import { formatBriefMarkdown, generateBrief } from '../ai/brief.ts';
+import { UnsupportedFilingTypeError } from '../ai/fetch-10k.ts';
 import { log } from '../lib/logger.ts';
 
 interface Args {
@@ -35,12 +36,26 @@ async function main(): Promise<void> {
   const earningsCallText = args.earningsFile ? readFileSync(args.earningsFile, 'utf-8') : undefined;
 
   log.info('generating dividend brief', { ticker: args.ticker });
-  const brief = await generateBrief(args.ticker, { earningsCallText });
-
-  console.log(formatBriefMarkdown(brief));
-  console.log('\n---\n```json');
-  console.log(JSON.stringify(brief, null, 2));
-  console.log('```');
+  try {
+    const brief = await generateBrief(args.ticker, { earningsCallText });
+    console.log(formatBriefMarkdown(brief));
+    console.log('\n---\n```json');
+    console.log(JSON.stringify(brief, null, 2));
+    console.log('```');
+  } catch (err) {
+    if (err instanceof UnsupportedFilingTypeError) {
+      console.error(`\n⚠️  ${err.message}\n`);
+      process.exit(2);
+    }
+    // Surface other expected user-facing errors (bad ticker, network,
+    // SEC throttling) without the noisy stack trace.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith('Could not resolve CIK')) {
+      console.error(`\n⚠️  ${msg}\n`);
+      process.exit(2);
+    }
+    throw err;
+  }
 }
 
 if (import.meta.main) {

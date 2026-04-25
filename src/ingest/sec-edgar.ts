@@ -16,6 +16,9 @@ import { config } from '../lib/config.ts';
 import { log } from '../lib/logger.ts';
 
 const TICKER_TO_CIK_URL = 'https://www.sec.gov/files/company_tickers.json';
+// ETFs and mutual funds live in a separate SEC index. We use this purely for
+// diagnostics — to tell the user "you tried an ETF, brief is for single stocks".
+const MF_TICKER_URL = 'https://www.sec.gov/files/company_tickers_mf.json';
 
 const TickerEntrySchema = z.object({
   cik_str: z.number(),
@@ -26,6 +29,7 @@ const TickerEntrySchema = z.object({
 const TickerMapSchema = z.record(z.string(), TickerEntrySchema);
 
 let _tickerCache: Map<string, { cik: string; name: string }> | null = null;
+let _mfTickerCache: Set<string> | null = null;
 
 function pad10(cik: number | string): string {
   const s = typeof cik === 'string' ? cik : String(cik);
@@ -67,6 +71,39 @@ export async function loadTickerToCikMap(): Promise<Map<string, { cik: string; n
 export async function tickerToCik(ticker: string): Promise<string | null> {
   const map = await loadTickerToCikMap();
   return map.get(ticker.toUpperCase())?.cik ?? null;
+}
+
+/**
+ * True if `ticker` appears in SEC's mutual-fund/ETF index. Used to give a
+ * helpful error when someone tries `bun run brief` against an ETF — ETFs
+ * file N-CSR shareholder reports, not 10-Ks, so the brief generator can't
+ * analyze them today.
+ */
+export async function isEtfOrMutualFund(ticker: string): Promise<boolean> {
+  if (_mfTickerCache) return _mfTickerCache.has(ticker.toUpperCase());
+
+  const res = await fetch(MF_TICKER_URL, {
+    headers: {
+      'User-Agent': config.secEdgarUserAgent,
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    log.warn('SEC mutual-fund ticker map fetch failed', { status: res.status });
+    _mfTickerCache = new Set();
+    return false;
+  }
+  const json = (await res.json()) as { fields: string[]; data: unknown[][] };
+  const symbolIdx = json.fields.indexOf('symbol');
+  const set = new Set<string>();
+  if (symbolIdx >= 0) {
+    for (const row of json.data) {
+      const sym = row[symbolIdx];
+      if (typeof sym === 'string') set.add(sym.toUpperCase());
+    }
+  }
+  _mfTickerCache = set;
+  return set.has(ticker.toUpperCase());
 }
 
 export async function fetchSubmissions(cik: string): Promise<unknown> {
