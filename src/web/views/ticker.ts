@@ -222,14 +222,15 @@ export function renderTickerPage(data: TickerPageData): string {
   <script>
     (function() {
       const data = window.__TICKER__;
+      const t = window.__chartTheme();
       const fmtUsd = (n) => '$' + n.toFixed(4);
       const fmtUsd2 = (n) => '$' + n.toFixed(2);
 
       const tooltipDefaults = {
-        backgroundColor: 'rgba(15, 23, 36, 0.95)',
-        titleColor: '#e2e8f0',
-        bodyColor: '#cbd5e1',
-        borderColor: 'rgba(52, 211, 153, 0.4)',
+        backgroundColor: t.tooltipBg,
+        titleColor: t.tooltipText,
+        bodyColor: t.tooltipBody,
+        borderColor: t.tooltipBorder,
         borderWidth: 1,
         padding: 10,
         cornerRadius: 6,
@@ -237,6 +238,11 @@ export function renderTickerPage(data: TickerPageData): string {
         titleFont: { size: 12, weight: '600' },
         bodyFont: { size: 12 },
       };
+
+      const axis = (extra) => Object.assign({
+        grid: { color: t.grid },
+        ticks: { color: t.text },
+      }, extra || {});
 
       // Annualized bar chart
       if (document.getElementById('annualChart')) {
@@ -247,8 +253,8 @@ export function renderTickerPage(data: TickerPageData): string {
             datasets: [{
               label: 'Annual DPS',
               data: data.annualSeries.map((p) => p.total),
-              backgroundColor: 'rgba(52, 211, 153, 0.6)',
-              borderColor: 'rgb(52, 211, 153)',
+              backgroundColor: t.isLight ? 'rgba(5, 150, 105, 0.55)' : 'rgba(52, 211, 153, 0.6)',
+              borderColor: t.emerald,
               borderWidth: 1,
               borderRadius: 4,
             }],
@@ -267,15 +273,12 @@ export function renderTickerPage(data: TickerPageData): string {
               },
             },
             scales: {
-              x: {
-                grid: { color: 'rgba(148, 163, 184, 0.05)' },
-                ticks: { color: '#94a3b8' },
-              },
-              y: {
+              x: axis(),
+              y: axis({
                 beginAtZero: true,
-                grid: { color: 'rgba(148, 163, 184, 0.07)' },
-                ticks: { color: '#94a3b8', callback: (v) => '$' + v.toFixed(2) },
-              },
+                grid: { color: t.gridStrong },
+                ticks: { color: t.text, callback: (v) => '$' + v.toFixed(2) },
+              }),
             },
           },
         });
@@ -289,12 +292,12 @@ export function renderTickerPage(data: TickerPageData): string {
             datasets: [{
               label: 'Per-share dividend',
               data: data.history.map((p) => ({ x: p.exDate, y: p.amount })),
-              borderColor: 'rgb(34, 211, 238)',
-              backgroundColor: 'rgba(34, 211, 238, 0.1)',
+              borderColor: t.cyan,
+              backgroundColor: t.cyanFill,
               borderWidth: 1.5,
               pointRadius: 2,
               pointHoverRadius: 5,
-              pointBackgroundColor: 'rgb(34, 211, 238)',
+              pointBackgroundColor: t.cyan,
               fill: false,
               stepped: true,
             }],
@@ -313,17 +316,17 @@ export function renderTickerPage(data: TickerPageData): string {
               },
             },
             scales: {
-              x: {
+              x: axis({
                 type: 'time',
                 time: { unit: 'year' },
-                grid: { color: 'rgba(148, 163, 184, 0.05)' },
-                ticks: { color: '#94a3b8' },
-              },
-              y: {
+                grid: { color: t.grid },
+                ticks: { color: t.text },
+              }),
+              y: axis({
                 beginAtZero: true,
-                grid: { color: 'rgba(148, 163, 184, 0.07)' },
-                ticks: { color: '#94a3b8', callback: (v) => '$' + v.toFixed(2) },
-              },
+                grid: { color: t.gridStrong },
+                ticks: { color: t.text, callback: (v) => '$' + v.toFixed(2) },
+              }),
             },
           },
         });
@@ -337,14 +340,14 @@ export function renderTickerPage(data: TickerPageData): string {
             datasets: [{
               label: 'TTM DPS',
               data: data.cumulative.map((p) => ({ x: p.exDate, y: p.ttm })),
-              borderColor: 'rgb(52, 211, 153)',
-              backgroundColor: 'rgba(52, 211, 153, 0.18)',
+              borderColor: t.emerald,
+              backgroundColor: t.emeraldFill,
               borderWidth: 2,
               fill: true,
               tension: 0.3,
               pointRadius: 0,
               pointHoverRadius: 6,
-              pointBackgroundColor: 'rgb(52, 211, 153)',
+              pointBackgroundColor: t.emerald,
             }],
           },
           options: {
@@ -362,17 +365,17 @@ export function renderTickerPage(data: TickerPageData): string {
               },
             },
             scales: {
-              x: {
+              x: axis({
                 type: 'time',
                 time: { unit: 'year' },
-                grid: { color: 'rgba(148, 163, 184, 0.05)' },
-                ticks: { color: '#94a3b8' },
-              },
-              y: {
+                grid: { color: t.grid },
+                ticks: { color: t.text },
+              }),
+              y: axis({
                 beginAtZero: true,
-                grid: { color: 'rgba(148, 163, 184, 0.07)' },
-                ticks: { color: '#94a3b8', callback: (v) => '$' + v.toFixed(2) },
-              },
+                grid: { color: t.gridStrong },
+                ticks: { color: t.text, callback: (v) => '$' + v.toFixed(2) },
+              }),
             },
           },
         });

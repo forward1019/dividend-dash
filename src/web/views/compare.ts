@@ -132,6 +132,7 @@ export function renderComparePage(data: ComparePageData): string {
     function renderCompareChart() {
       const cmp = window.__COMPARE__;
       if (!cmp || cmp.selected.length === 0) return;
+      const theme = window.__chartTheme();
       const palette = ${JSON.stringify(PALETTE)};
       const datasets = cmp.selected.map((t, i) => ({
         label: t,
@@ -154,12 +155,12 @@ export function renderComparePage(data: ComparePageData): string {
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
           plugins: {
-            legend: { labels: { color: '#cbd5e1' } },
+            legend: { labels: { color: theme.legend } },
             tooltip: {
-              backgroundColor: 'rgba(15, 23, 36, 0.95)',
-              titleColor: '#e2e8f0',
-              bodyColor: '#cbd5e1',
-              borderColor: 'rgba(52, 211, 153, 0.4)',
+              backgroundColor: theme.tooltipBg,
+              titleColor: theme.tooltipText,
+              bodyColor: theme.tooltipBody,
+              borderColor: theme.tooltipBorder,
               borderWidth: 1,
               padding: 10,
               cornerRadius: 6,
@@ -173,13 +174,13 @@ export function renderComparePage(data: ComparePageData): string {
             x: {
               type: 'time',
               time: { unit: 'year' },
-              grid: { color: 'rgba(148, 163, 184, 0.05)' },
-              ticks: { color: '#94a3b8' },
+              grid: { color: theme.grid },
+              ticks: { color: theme.text },
             },
             y: {
               beginAtZero: true,
-              grid: { color: 'rgba(148, 163, 184, 0.07)' },
-              ticks: { color: '#94a3b8', callback: (v) => '$' + v.toFixed(2) },
+              grid: { color: theme.gridStrong },
+              ticks: { color: theme.text, callback: (v) => '$' + v.toFixed(2) },
             },
           },
         },

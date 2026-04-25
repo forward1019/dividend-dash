@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] — 2026-04-25
+
+Three-theme support for the web dashboard: **Light**, **Light-Dark**
+(auto, follows the OS), and **Dark** (the v0.2 default look).
+
+### Added
+
+**Theme system**
+- New segmented theme toggle (☀ / ◐ / ☾) in the header. Click to switch
+  between Light, Light-Dark (auto-follow OS), and Dark.
+- `light-dark` mode resolves at runtime from
+  `window.matchMedia('(prefers-color-scheme: dark)')` and live-updates if
+  the OS preference flips.
+- Preference persisted to `localStorage` as `dd_theme`; default for new
+  users is `light-dark` so the dashboard matches whatever theme the rest
+  of their system uses.
+- Pre-paint script in `<head>` resolves the theme attribute before first
+  paint — no flash of wrong theme on load.
+- `data-resolved-theme` attribute on `<html>` drives a single block of
+  CSS overrides that remap the dark-first Tailwind utility classes used
+  across every view, so individual views didn't need theme-aware class
+  refactors.
+- Chart.js color palette is theme-aware via `window.__chartTheme()`:
+  axis text, gridlines, tooltip styling, and series fills all swap
+  between dark and light values. Switching themes triggers a page
+  reload (URL state preserved) so chart instances pick up the new
+  palette cleanly.
+
+### Changed
+
+- Default `<html>` no longer hardcodes `class="dark"`; the pre-paint
+  script sets it dynamically based on the resolved theme.
+- Header version badge bumped to `v0.3`.
+
 ## [0.2.0] — 2026-04-25
 
 A beautiful local web dashboard, plus a tracked-universe model that

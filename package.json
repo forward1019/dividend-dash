@@ -1,6 +1,6 @@
 {
   "name": "dividend-dash",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Personal dividend portfolio tracker with Monte Carlo projections, sustainability scorecards, and AI-powered dividend briefs.",
   "type": "module",
   "license": "MIT",

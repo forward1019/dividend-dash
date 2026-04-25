@@ -226,6 +226,7 @@ export function renderDashboard(data: DashboardData): string {
               Object.entries(data.history).map(([t, h]) => [t, h.slice(-20).map((p) => p.amount)]),
             ),
           )};
+          const t = window.__chartTheme();
           for (const [ticker, points] of Object.entries(sparkData)) {
             const canvas = document.getElementById('spark-' + ticker);
             if (!canvas || points.length < 2) continue;
@@ -235,8 +236,8 @@ export function renderDashboard(data: DashboardData): string {
                 labels: points.map((_, i) => i),
                 datasets: [{
                   data: points,
-                  borderColor: 'rgb(52, 211, 153)',
-                  backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                  borderColor: t.emerald,
+                  backgroundColor: t.isLight ? 'rgba(5, 150, 105, 0.10)' : 'rgba(52, 211, 153, 0.10)',
                   borderWidth: 1.5,
                   fill: true,
                   tension: 0.3,
