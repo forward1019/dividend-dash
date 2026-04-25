@@ -24,7 +24,7 @@ Existing dividend trackers (Snowball, Sharesight, Stock Events, broker dashboard
 - **Language:** TypeScript 5.9 (strict)
 - **Database:** SQLite via `bun:sqlite`
 - **Data sources:** [`yahoo-finance2`](https://github.com/gadicc/node-yahoo-finance2) (free, 20+ years of dividend history), SEC EDGAR (free, official filings), [Polygon.io](https://polygon.io) ($29/mo) as paid fallback only.
-- **AI:** Anthropic Claude (10-K analysis with prompt caching)
+- **AI:** Anthropic Claude via local `claude` CLI (Claude Max OAuth by default, prompt caching automatic; falls back to `ANTHROPIC_API_KEY` if set)
 - **Lint/format:** Biome
 - **Test:** `bun test`
 
@@ -50,7 +50,9 @@ bun run report
 # 5. Generate the weekly digest (dry run prints to stdout)
 bun run digest -- --dry-run
 
-# 6. Generate an AI dividend brief (requires ANTHROPIC_API_KEY)
+# 6. Generate an AI dividend brief
+#    (uses the local `claude` CLI / your Claude Max OAuth — no API key needed.
+#     Set ANTHROPIC_API_KEY only if you want to use an API account instead.)
 bun run brief -- --ticker=SCHD
 ```
 
@@ -155,9 +157,10 @@ Set these in `.env` (see `.env.example`):
 
 | Var | Required for | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `brief` | Claude API for AI dividend briefs |
+| `ANTHROPIC_API_KEY` | optional | Only needed for `brief` if you don't have a local `claude` CLI with Max OAuth (default path uses the CLI) |
+| `CLAUDE_BIN` | optional | Path to the `claude` binary if not on `$PATH` (default: `claude`) |
 | `DISCORD_WEBHOOK_URL` | `digest` (non-dry-run) | Where to post the weekly digest |
-| `SEC_EDGAR_USER_AGENT` | EDGAR requests | SEC requires identification (any string with email works) |
+| `SEC_EDGAR_USER_AGENT` | EDGAR requests | SEC fair-access policy. Format: `"Your Name your@real-email.com"`. ⚠️ Generic / no-reply domains (e.g. `users.noreply.github.com`) are blocked by SEC's bot detector — use a real personal or company email. |
 | `POLYGON_API_KEY` | optional fallback | Used only if free sources fail |
 | `DD_DB_PATH` | optional | Override DB location (default: `./data/dividend-dash.db`) |
 | `DD_LOG_LEVEL` | optional | `debug` / `info` / `warn` / `error` |
