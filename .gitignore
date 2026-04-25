@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data (personal portfolio data is private)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/imports/
+data/cache/
+!data/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Temp
+tmp/
+.tmp/

@@ -1,0 +1,41 @@
+{
+  "name": "dividend-dash",
+  "version": "0.1.0",
+  "description": "Personal dividend portfolio tracker with Monte Carlo projections, sustainability scorecards, and AI-powered dividend briefs.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "author": "forward1019",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/forward1019/dividend-dash.git"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "ingest": "bun run src/cli/ingest.ts",
+    "report": "bun run src/cli/report.ts",
+    "digest": "bun run src/cli/digest.ts",
+    "brief": "bun run src/cli/brief.ts",
+    "migrate": "bun run src/db/migrate.ts",
+    "seed": "bun run src/db/seed.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "yahoo-finance2": "^2.13.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "^1.1.14",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
