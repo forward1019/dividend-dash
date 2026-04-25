@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] — 2026-04-25
+
+A beautiful local web dashboard, plus a tracked-universe model that
+preloads 40 popular dividend ETFs and stocks so the UI is interesting
+even before any broker positions are imported.
+
+### Added
+
+**Web dashboard (`bun run web`)**
+- Bun.serve HTTP server at `http://localhost:5173` (port via `DD_WEB_PORT`)
+- Dark glass-morphism design with Tailwind, Inter / JetBrains Mono, Chart.js, Alpine.js (all CDN — zero npm UI deps)
+- Four pages:
+  - **Dashboard** — overview grid of all 40 universe tickers with sparklines, sortable + filterable by category / kind / search
+  - **Ticker drill-down** (`/ticker/:symbol`) — annual + per-payment + TTM dividend charts, sustainability scorecard breakdown, recent payments table, 12-cell stat grid
+  - **Compare** (`/compare?t=…`) — pick up to 6 tickers, overlay TTM dividend curves, side-by-side metric table
+  - **Calendar** — 90-day projected ex-dividend calendar grouped by month
+- JSON API: `GET /api/universe`, `GET /api/ticker/:t`, `GET /api/calendar`, `POST /api/refresh-cache`
+- 60-second in-memory cache for analytics queries
+
+**Tracked universe (40 tickers)**
+- 20 ETFs across 5 categories: core dividend (SCHD, VYM, DVY), dividend growth (VIG, DGRO, NOBL, SDY), high-yield (SPYD, HDV, FDVV, SDIV, DIV, RDIV), income / covered-call (JEPI, JEPQ, QYLD, PFF), international (IDV, VYMI, REET)
+- 20 individual stocks across 4 categories: Dividend Kings (KO, JNJ, PG, MMM, EMR), Aristocrats (PEP, MCD, WMT, ABBV, CVX, XOM, LMT), high-yield (MO, T, VZ, PFE), REITs / BDCs (O, VICI, STAG, MAIN)
+- `bun run seed-universe` fetches 20 years of dividend history, latest prices, and fundamentals (payout ratio, FCF, debt/equity) for every ticker
+- `bun run seed-universe -- --refresh-prices` refreshes quotes only (faster)
+- `bun run seed-universe -- --ticker=SCHD,KO` for subsets
+
+**Data layer**
+- New `src/web/data.ts` accessor with cached card builder and calendar projector
+- New `src/web/tickers.ts` defining the universe + categories + editorial notes
+- `src/ingest/yahoo-quote.ts` fetches latest quote and fundamentals; persists to `prices` and `fundamentals` tables (previously only dividend events were ingested)
+
+### Changed
+
+- Upgraded `yahoo-finance2` from v2 (deprecated, broken JSON parsing) to v3.14.0
+  - Constructor changed to `new YahooFinance({ suppressNotices: [...] })`
+  - `quote().trailingAnnualDividendYield` and `dividendYield` now return as percentage (3.44 means 3.44%); we divide by 100 to keep our internal yield as a fraction
+
+### Fixed
+
+- yfinance v2 was returning HTML instead of JSON for new quote/chart calls, causing every seed attempt to fail with `SyntaxError: Failed to parse JSON`. v3 fixes it.
+
+### Test coverage at v0.2.0
+
+104 tests still passing (no regressions). Web layer is integration-tested
+via the `/browse` skill against the live local server.
+
+---
+
 ## [0.1.0] — 2026-04-25
 
 Initial autonomous-mode build. Six phases shipped in a single session.

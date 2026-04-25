@@ -1,6 +1,6 @@
 # dividend-dash
 
-Personal dividend portfolio tracker. Tracks dividend payments across brokers, projects future income with Monte Carlo simulation, scores sustainability, generates AI-powered dividend briefs, and posts a weekly Discord digest.
+Personal dividend portfolio tracker. Tracks dividend payments across brokers, projects future income with Monte Carlo simulation, scores sustainability, generates AI-powered dividend briefs, posts a weekly Discord digest, and **(new in v0.2)** ships with a beautiful local web dashboard pre-loaded with 40 popular dividend ETFs and stocks.
 
 [![CI](https://github.com/forward1019/dividend-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/forward1019/dividend-dash/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -28,7 +28,26 @@ Existing dividend trackers (Snowball, Sharesight, Stock Events, broker dashboard
 - **Lint/format:** Biome
 - **Test:** `bun test`
 
-No frontend. No Next.js. CLI + scheduled jobs + Discord push. The "UI" is the digest.
+Frontend: **`Bun.serve` web dashboard** (added in v0.2). Tailwind + Chart.js + Alpine.js, all CDN — no npm UI deps. CLI + scheduled jobs + Discord push are still first-class; the web UI is for browsing the universe and drilling in.
+
+## Web dashboard
+
+```bash
+bun run migrate          # one-time
+bun run seed-universe    # fetches 20y dividends, prices, fundamentals for 40 popular tickers
+bun run web              # http://localhost:5173
+```
+
+Four pages:
+
+- **Dashboard** — searchable, sortable, filterable grid of all 40 universe tickers with sparklines, forward yield, sustainability score, growth streak, 5y CAGR
+- **Ticker drill-down** (`/ticker/SCHD`) — annual + per-payment + TTM dividend charts, sustainability scorecard breakdown, recent payments, 12-cell stat grid
+- **Compare** (`/compare?t=SCHD&t=VYM&t=VIG`) — overlay TTM dividend curves for up to 6 tickers, side-by-side metric table
+- **Calendar** — 90-day projected ex-dividend calendar grouped by month
+
+The 40-ticker universe spans Dividend Kings (KO, JNJ, PG, MMM, EMR), Aristocrats (PEP, MCD, WMT, ABBV, CVX, XOM, LMT), high-yield stocks (MO, T, VZ, PFE), REITs / BDCs (O, VICI, STAG, MAIN), and 20 popular dividend ETFs across core (SCHD, VYM, DVY), growth (VIG, DGRO, NOBL, SDY), high-yield (SPYD, HDV, FDVV, SDIV, DIV, RDIV), income / covered-call (JEPI, JEPQ, QYLD, PFF), and international (IDV, VYMI, REET) categories. Edit `src/web/tickers.ts` to add or remove tickers, then re-run `bun run seed-universe`.
+
+JSON API: `GET /api/universe`, `GET /api/ticker/:t`, `GET /api/calendar`.
 
 ## Quick start
 
@@ -143,6 +162,10 @@ docs/
 | Command | What it does |
 |---|---|
 | `bun run migrate` | Apply `src/db/schema.sql` to the DB |
+| `bun run seed-universe` | Fetch dividends + prices + fundamentals for the 40-ticker universe |
+| `bun run seed-universe -- --refresh-prices` | Refresh quotes only (faster, no dividend re-fetch) |
+| `bun run seed-universe -- --ticker=SCHD,KO` | Seed/refresh a subset |
+| `bun run web` | Start the local web dashboard (default port 5173, override with `DD_WEB_PORT`) |
 | `bun run ingest -- --broker=<name> --file=<path>` | Import a broker CSV |
 | `bun run report` | Print portfolio summary to stdout |
 | `bun run brief -- --ticker=<TICKER>` | AI dividend brief from latest 10-K |

@@ -18,6 +18,8 @@
     "brief": "bun run src/cli/brief.ts",
     "migrate": "bun run src/db/migrate.ts",
     "seed": "bun run src/db/seed.ts",
+    "seed-universe": "bun run src/cli/seed-universe.ts",
+    "web": "bun run src/web/server.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "type-check": "tsc --noEmit",
@@ -27,7 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "yahoo-finance2": "^2.13.3",
+    "yahoo-finance2": "^3.14.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

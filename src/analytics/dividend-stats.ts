@@ -72,14 +72,22 @@ export function annualDividendPerShare(events: DividendEventInput[], year: numbe
 
 /**
  * Compounded annual growth rate of per-share dividends over `years` calendar
- * years ending in the year of the most recent event. Returns null if there
+ * years ending in the most recent COMPLETE year. Returns null if there
  * isn't enough data or the start year had zero dividend.
+ *
+ * "Complete year" rule: if the most recent event is in the current calendar
+ * year, we fall back to (currentYear - 1) as the endpoint so a partial-year
+ * sum doesn't drag the CAGR down. Otherwise we use the most recent event's
+ * year directly. This keeps unit tests (which don't pass a clock) stable
+ * while protecting live data from the 2026-04-25 SCHD-style anomaly.
  */
 export function dividendCagr(events: DividendEventInput[], years: number): number | null {
   if (events.length === 0 || years < 1) return null;
 
   const sorted = [...events].sort((a, b) => (a.exDate < b.exDate ? 1 : -1));
-  const lastYear = Number.parseInt(sorted[0]!.exDate.slice(0, 4), 10);
+  const latestEventYear = Number.parseInt(sorted[0]!.exDate.slice(0, 4), 10);
+  const currentYear = new Date().getUTCFullYear();
+  const lastYear = latestEventYear === currentYear ? latestEventYear - 1 : latestEventYear;
   const startYear = lastYear - years;
 
   const startAnnual = annualDividendPerShare(events, startYear);

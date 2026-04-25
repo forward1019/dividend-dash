@@ -1,9 +1,9 @@
 /**
- * yahoo-finance2 wrapper. Fetches dividend history and basic security
+ * yahoo-finance2 v3 wrapper. Fetches dividend history and basic security
  * metadata, validates with Zod, writes to SQLite.
  */
 
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import { z } from 'zod';
 
 import type { Database } from 'bun:sqlite';
@@ -13,8 +13,7 @@ import { log } from '../lib/logger.ts';
 import { dollarsToMicros } from '../lib/money.ts';
 import type { DividendEvent } from '../types.ts';
 
-// Suppress yfinance survey noise globally.
-yahooFinance.suppressNotices(['yahooSurvey', 'ripHistorical']);
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 
 const QuoteResponseSchema = z.object({
   symbol: z.string(),
@@ -30,7 +29,7 @@ const QuoteResponseSchema = z.object({
 export async function fetchAndUpsertSecurity(db: Database, ticker: string): Promise<void> {
   const t = ticker.toUpperCase();
   try {
-    const q = await yahooFinance.quote(t);
+    const q = await yf.quote(t);
     const parsed = QuoteResponseSchema.safeParse(q);
     if (!parsed.success) {
       log.warn(`yfinance quote for ${t} failed schema validation`, { error: parsed.error.message });
@@ -73,8 +72,8 @@ export async function fetchAndUpsertDividends(
     opts.startDate ?? new Date(Date.now() - 20 * 365 * 86400 * 1000).toISOString().slice(0, 10);
   const period2 = opts.endDate ?? new Date().toISOString().slice(0, 10);
 
-  // yahoo-finance2's `chart()` returns dividend events in events.dividends
-  const result = await yahooFinance.chart(t, {
+  // yahoo-finance2 v3 chart() returns dividend events under events.dividends.
+  const result = await yf.chart(t, {
     period1,
     period2,
     interval: '1d',
