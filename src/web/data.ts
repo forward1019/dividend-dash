@@ -204,6 +204,294 @@ export function getQuoteFromYf(ticker: string): {
   return rows;
 }
 
+// === Quote snapshot (rich market data — v0.4) ===
+
+export interface QuoteSnapshotRow {
+  ticker: string;
+  fetchDate: string;
+  shortName: string | null;
+  longName: string | null;
+  exchange: string | null;
+  currency: string | null;
+  quoteType: string | null;
+  sector: string | null;
+  industry: string | null;
+  summary: string | null;
+  website: string | null;
+  price: number | null;
+  marketCap: number | null;
+  volume: number | null;
+  avgVolume3m: number | null;
+  beta: number | null;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
+  fiftyTwoWeekChangePct: number | null;
+  epsTrailing: number | null;
+  epsForward: number | null;
+  peTrailing: number | null;
+  peForward: number | null;
+  psRatio: number | null;
+  pbRatio: number | null;
+  pegRatio: number | null;
+  enterpriseValue: number | null;
+  evToRevenue: number | null;
+  evToEbitda: number | null;
+  freeCashFlow: number | null;
+  operatingCashFlow: number | null;
+  totalDebt: number | null;
+  totalCash: number | null;
+  returnOnEquity: number | null;
+  returnOnAssets: number | null;
+  profitMargins: number | null;
+  dividendRate: number | null;
+  dividendYield: number | null;
+  payoutRatio: number | null;
+  exDividendDate: string | null;
+  expenseRatio: number | null;
+  totalAssets: number | null;
+  fundFamily: string | null;
+  inceptionDate: string | null;
+  ytdReturn: number | null;
+  threeYearReturn: number | null;
+  fiveYearReturn: number | null;
+}
+
+export function getLatestQuoteSnapshot(ticker: string): QuoteSnapshotRow | null {
+  const db = getDb();
+  const row = db
+    .query<
+      {
+        ticker: string;
+        fetch_date: string;
+        short_name: string | null;
+        long_name: string | null;
+        exchange: string | null;
+        currency: string | null;
+        quote_type: string | null;
+        sector: string | null;
+        industry: string | null;
+        summary: string | null;
+        website: string | null;
+        price: number | null;
+        market_cap: number | null;
+        volume: number | null;
+        avg_volume_3m: number | null;
+        beta: number | null;
+        fifty_two_week_high: number | null;
+        fifty_two_week_low: number | null;
+        fifty_two_week_change_pct: number | null;
+        eps_trailing: number | null;
+        eps_forward: number | null;
+        pe_trailing: number | null;
+        pe_forward: number | null;
+        ps_ratio: number | null;
+        pb_ratio: number | null;
+        peg_ratio: number | null;
+        enterprise_value: number | null;
+        ev_to_revenue: number | null;
+        ev_to_ebitda: number | null;
+        free_cash_flow: number | null;
+        operating_cash_flow: number | null;
+        total_debt: number | null;
+        total_cash: number | null;
+        return_on_equity: number | null;
+        return_on_assets: number | null;
+        profit_margins: number | null;
+        dividend_rate: number | null;
+        dividend_yield: number | null;
+        payout_ratio: number | null;
+        ex_dividend_date: string | null;
+        expense_ratio: number | null;
+        total_assets: number | null;
+        fund_family: string | null;
+        inception_date: string | null;
+        ytd_return: number | null;
+        three_year_return: number | null;
+        five_year_return: number | null;
+      },
+      [string]
+    >('SELECT * FROM quote_snapshot WHERE ticker = ? ORDER BY fetch_date DESC LIMIT 1')
+    .get(ticker.toUpperCase());
+  if (!row) return null;
+  return {
+    ticker: row.ticker,
+    fetchDate: row.fetch_date,
+    shortName: row.short_name,
+    longName: row.long_name,
+    exchange: row.exchange,
+    currency: row.currency,
+    quoteType: row.quote_type,
+    sector: row.sector,
+    industry: row.industry,
+    summary: row.summary,
+    website: row.website,
+    price: row.price,
+    marketCap: row.market_cap,
+    volume: row.volume,
+    avgVolume3m: row.avg_volume_3m,
+    beta: row.beta,
+    fiftyTwoWeekHigh: row.fifty_two_week_high,
+    fiftyTwoWeekLow: row.fifty_two_week_low,
+    fiftyTwoWeekChangePct: row.fifty_two_week_change_pct,
+    epsTrailing: row.eps_trailing,
+    epsForward: row.eps_forward,
+    peTrailing: row.pe_trailing,
+    peForward: row.pe_forward,
+    psRatio: row.ps_ratio,
+    pbRatio: row.pb_ratio,
+    pegRatio: row.peg_ratio,
+    enterpriseValue: row.enterprise_value,
+    evToRevenue: row.ev_to_revenue,
+    evToEbitda: row.ev_to_ebitda,
+    freeCashFlow: row.free_cash_flow,
+    operatingCashFlow: row.operating_cash_flow,
+    totalDebt: row.total_debt,
+    totalCash: row.total_cash,
+    returnOnEquity: row.return_on_equity,
+    returnOnAssets: row.return_on_assets,
+    profitMargins: row.profit_margins,
+    dividendRate: row.dividend_rate,
+    dividendYield: row.dividend_yield,
+    payoutRatio: row.payout_ratio,
+    exDividendDate: row.ex_dividend_date,
+    expenseRatio: row.expense_ratio,
+    totalAssets: row.total_assets,
+    fundFamily: row.fund_family,
+    inceptionDate: row.inception_date,
+    ytdReturn: row.ytd_return,
+    threeYearReturn: row.three_year_return,
+    fiveYearReturn: row.five_year_return,
+  };
+}
+
+// === ETF holdings (v0.4) ===
+
+export interface EtfHoldingRow {
+  position: number;
+  symbol: string | null;
+  name: string;
+  allocationPct: number;
+}
+
+export interface EtfProfileRow {
+  fetchDate: string;
+  totalHoldings: number | null;
+  sectorWeights: { sector: string; pct: number }[];
+}
+
+export function getEtfHoldings(ticker: string): EtfHoldingRow[] {
+  const db = getDb();
+  // Pull holdings from the most recent fetch.
+  const latest = db
+    .query<{ fetch_date: string }, [string]>(
+      'SELECT MAX(fetch_date) as fetch_date FROM etf_holdings WHERE etf_ticker = ?',
+    )
+    .get(ticker.toUpperCase());
+  if (!latest?.fetch_date) return [];
+  const rows = db
+    .query<
+      {
+        position: number;
+        holding_symbol: string | null;
+        holding_name: string;
+        allocation_pct: number;
+      },
+      [string, string]
+    >(
+      `SELECT position, holding_symbol, holding_name, allocation_pct
+       FROM etf_holdings
+       WHERE etf_ticker = ? AND fetch_date = ?
+       ORDER BY position ASC`,
+    )
+    .all(ticker.toUpperCase(), latest.fetch_date);
+  return rows.map((r) => ({
+    position: r.position,
+    symbol: r.holding_symbol,
+    name: r.holding_name,
+    allocationPct: r.allocation_pct,
+  }));
+}
+
+export function getEtfProfile(ticker: string): EtfProfileRow | null {
+  const db = getDb();
+  const row = db
+    .query<
+      {
+        fetch_date: string;
+        total_holdings: number | null;
+        sector_weights_json: string | null;
+      },
+      [string]
+    >(
+      `SELECT fetch_date, total_holdings, sector_weights_json
+       FROM etf_profile
+       WHERE etf_ticker = ?
+       ORDER BY fetch_date DESC LIMIT 1`,
+    )
+    .get(ticker.toUpperCase());
+  if (!row) return null;
+  let sectorWeights: { sector: string; pct: number }[] = [];
+  if (row.sector_weights_json) {
+    try {
+      const parsed = JSON.parse(row.sector_weights_json);
+      if (Array.isArray(parsed)) {
+        sectorWeights = parsed.filter(
+          (s) => typeof s?.sector === 'string' && typeof s?.pct === 'number',
+        );
+      }
+    } catch {
+      sectorWeights = [];
+    }
+  }
+  return {
+    fetchDate: row.fetch_date,
+    totalHoldings: row.total_holdings,
+    sectorWeights,
+  };
+}
+
+// === News (v0.4) ===
+
+export interface NewsRow {
+  link: string;
+  title: string;
+  publisher: string | null;
+  publishedAt: string;
+  summary: string | null;
+  thumbnailUrl: string | null;
+}
+
+export function getTickerNews(ticker: string, limit = 10): NewsRow[] {
+  const db = getDb();
+  const rows = db
+    .query<
+      {
+        link: string;
+        title: string;
+        publisher: string | null;
+        published_at: string;
+        summary: string | null;
+        thumbnail_url: string | null;
+      },
+      [string, number]
+    >(
+      `SELECT link, title, publisher, published_at, summary, thumbnail_url
+       FROM ticker_news
+       WHERE ticker = ?
+       ORDER BY published_at DESC
+       LIMIT ?`,
+    )
+    .all(ticker.toUpperCase(), limit);
+  return rows.map((r) => ({
+    link: r.link,
+    title: r.title,
+    publisher: r.publisher,
+    publishedAt: r.published_at,
+    summary: r.summary,
+    thumbnailUrl: r.thumbnail_url,
+  }));
+}
+
 // === Card builder ===
 
 export function buildTickerCard(u: UniverseTicker): TickerCard {

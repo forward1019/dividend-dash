@@ -157,6 +157,165 @@ const THEME_RUNTIME_SCRIPT = `
 `;
 
 /**
+ * Command-palette runtime — Cmd+K / Ctrl+K opens a centered search overlay
+ * that fuzzy-matches the universe and navigates to /ticker/SYMBOL.
+ *
+ * Self-contained vanilla JS so it works on every page without Alpine.
+ *
+ *   - Trigger:    Cmd/Ctrl-K, click the header search button, or `/`
+ *   - Close:      Esc, backdrop click, or pick a result
+ *   - Navigate:   ↑/↓ arrows; Enter selects highlighted item
+ *   - Data:       fetched once from /api/universe, cached in memory
+ */
+const CMDK_RUNTIME_SCRIPT = `
+(function() {
+  var overlay = document.getElementById('dd-cmdk');
+  var input = document.getElementById('dd-cmdk-input');
+  var results = document.getElementById('dd-cmdk-results');
+  var trigger = document.getElementById('dd-cmdk-trigger');
+  if (!overlay || !input || !results) return;
+
+  var universe = null;       // cached universe array
+  var highlight = 0;         // index of highlighted result
+  var lastFiltered = [];     // current matches in display order
+  var loadPromise = null;
+
+  function ensureUniverse() {
+    if (universe) return Promise.resolve(universe);
+    if (loadPromise) return loadPromise;
+    loadPromise = fetch('/api/universe').then(function(r) { return r.json(); }).then(function(data) {
+      // Normalize — trim to fields we actually use to keep filter() cheap.
+      universe = (Array.isArray(data) ? data : []).map(function(c) {
+        return {
+          ticker: c.ticker,
+          name: c.name,
+          kind: c.kind,
+          categoryLabel: c.categoryLabel,
+          forwardYield: c.forwardYield,
+        };
+      });
+      return universe;
+    }).catch(function() { universe = []; return universe; });
+    return loadPromise;
+  }
+
+  function open() {
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+    input.value = '';
+    highlight = 0;
+    ensureUniverse().then(render);
+    setTimeout(function() { input.focus(); }, 30);
+  }
+  function close() {
+    overlay.classList.remove('flex');
+    overlay.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+  function isOpen() { return overlay.classList.contains('flex'); }
+
+  function fmtPctSafe(v) {
+    if (typeof v !== 'number' || isNaN(v)) return '';
+    return (v * 100).toFixed(2) + '%';
+  }
+
+  function score(c, q) {
+    if (!q) return 1;
+    var t = c.ticker.toLowerCase();
+    var n = (c.name || '').toLowerCase();
+    if (t === q) return 1000;
+    if (t.indexOf(q) === 0) return 500;
+    if (t.indexOf(q) >= 0) return 200;
+    if (n.indexOf(q) >= 0) return 50;
+    var label = (c.categoryLabel || '').toLowerCase();
+    if (label.indexOf(q) >= 0) return 20;
+    return 0;
+  }
+
+  function render() {
+    var q = input.value.trim().toLowerCase();
+    var u = universe || [];
+    var ranked = u
+      .map(function(c) { return { c: c, s: score(c, q) }; })
+      .filter(function(x) { return q === '' || x.s > 0; })
+      .sort(function(a, b) {
+        if (b.s !== a.s) return b.s - a.s;
+        return a.c.ticker.localeCompare(b.c.ticker);
+      })
+      .slice(0, 30);
+    lastFiltered = ranked.map(function(x) { return x.c; });
+    if (highlight >= lastFiltered.length) highlight = Math.max(0, lastFiltered.length - 1);
+
+    if (lastFiltered.length === 0) {
+      results.innerHTML = '<li class="px-4 py-8 text-center text-sm text-slate-500">' +
+        (q ? 'No tickers match “' + escapeHtml(q) + '”' : 'Loading universe…') +
+        '</li>';
+      return;
+    }
+    results.innerHTML = lastFiltered.map(function(c, i) {
+      var kindBadge = c.kind === 'etf'
+        ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-mono">ETF</span>'
+        : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 font-mono">STOCK</span>';
+      var hl = i === highlight ? 'bg-emerald-500/10' : '';
+      return '<li data-index="' + i + '" class="dd-cmdk-item ' + hl + ' px-4 py-2.5 cursor-pointer flex items-center gap-3 hover:bg-emerald-500/10 border-b border-slate-800/40 last:border-0">' +
+        '<span class="font-mono font-semibold text-slate-100 w-16 truncate">' + escapeHtml(c.ticker) + '</span>' +
+        kindBadge +
+        '<span class="text-sm text-slate-300 truncate flex-1">' + escapeHtml(c.name) + '</span>' +
+        '<span class="text-[11px] text-slate-500 truncate hidden sm:inline">' + escapeHtml(c.categoryLabel || '') + '</span>' +
+        '<span class="num text-xs text-emerald-300">' + escapeHtml(fmtPctSafe(c.forwardYield)) + '</span>' +
+        '</li>';
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function pick(i) {
+    var c = lastFiltered[i];
+    if (!c) return;
+    close();
+    window.location.href = '/ticker/' + encodeURIComponent(c.ticker);
+  }
+
+  // Event wiring
+  if (trigger) trigger.addEventListener('click', open);
+  document.addEventListener('keydown', function(e) {
+    var meta = e.metaKey || e.ctrlKey;
+    var inField = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
+    if (meta && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      isOpen() ? close() : open();
+      return;
+    }
+    if (e.key === '/' && !inField && !isOpen()) {
+      e.preventDefault();
+      open();
+      return;
+    }
+    if (!isOpen()) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); highlight = Math.min(lastFiltered.length - 1, highlight + 1); render(); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); highlight = Math.max(0, highlight - 1); render(); return; }
+    if (e.key === 'Enter')     { e.preventDefault(); pick(highlight); return; }
+  });
+  input.addEventListener('input', function() { highlight = 0; render(); });
+  results.addEventListener('click', function(e) {
+    var li = e.target && e.target.closest('li.dd-cmdk-item');
+    if (!li) return;
+    pick(parseInt(li.getAttribute('data-index'), 10));
+  });
+  overlay.addEventListener('click', function(e) {
+    var t = e.target;
+    if (t && t.getAttribute && t.getAttribute('data-cmdk-close') !== null) close();
+  });
+})();
+`;
+
+/**
  * Chart.js color palette resolver — used by every chart in every view.
  * Reads the currently resolved theme and returns matched colors.
  *
@@ -486,21 +645,48 @@ ${opts.head ?? ''}
           </svg>
         </div>
         <span class="font-bold tracking-tight text-lg">dividend-dash</span>
-        <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">v0.3</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">v0.4</span>
       </a>
       <nav class="flex items-center gap-0">${navHtml}</nav>
       <div class="flex-1"></div>
-      <form action="/ticker" method="get" class="flex items-center gap-2">
-        <input
-          name="symbol"
-          placeholder="Search ticker…"
-          class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-emerald-500 focus:w-56 transition-all placeholder:text-slate-500"
-          autocomplete="off"
-        >
-      </form>
+      <button
+        type="button"
+        id="dd-cmdk-trigger"
+        class="flex items-center gap-2 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+        aria-label="Open command palette"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 opacity-70"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <span class="hidden md:inline">Search ticker</span>
+        <kbd class="hidden md:inline ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800/70 text-slate-400 border border-slate-700">⌘K</kbd>
+      </button>
       ${renderThemeToggle()}
     </div>
   </header>
+
+  <!-- Command palette -->
+  <div id="dd-cmdk" class="dd-cmdk hidden fixed inset-0 z-50 items-start justify-center pt-24 px-4" role="dialog" aria-modal="true" aria-label="Ticker search">
+    <div class="dd-cmdk-backdrop absolute inset-0 bg-slate-950/70 backdrop-blur-sm" data-cmdk-close></div>
+    <div class="relative w-full max-w-xl rounded-2xl glass-strong border border-slate-700/60 shadow-2xl overflow-hidden">
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/60">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5 text-slate-500"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input
+          id="dd-cmdk-input"
+          type="text"
+          placeholder="Search by ticker or name (try SCHD, JNJ, dividend kings)…"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          class="flex-1 bg-transparent text-base text-slate-100 placeholder:text-slate-500 focus:outline-none"
+        >
+        <kbd class="text-[10px] font-mono text-slate-500 px-1.5 py-0.5 rounded bg-slate-800/60 border border-slate-700">esc</kbd>
+      </div>
+      <ul id="dd-cmdk-results" class="max-h-[60vh] overflow-y-auto"></ul>
+      <div class="px-4 py-2 border-t border-slate-800/60 text-[11px] text-slate-500 flex items-center justify-between">
+        <span><kbd class="font-mono text-slate-400">↑↓</kbd> navigate · <kbd class="font-mono text-slate-400">↵</kbd> open</span>
+        <span class="num">v0.4</span>
+      </div>
+    </div>
+  </div>
 
   <main class="max-w-7xl mx-auto px-6 py-8">
     ${opts.body}
@@ -513,6 +699,7 @@ ${opts.head ?? ''}
 
   ${opts.footerScripts ?? ''}
   <script>${THEME_RUNTIME_SCRIPT}</script>
+  <script>${CMDK_RUNTIME_SCRIPT}</script>
 </body>
 </html>`;
 }

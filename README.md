@@ -1,6 +1,6 @@
 # dividend-dash
 
-Personal dividend portfolio tracker. Tracks dividend payments across brokers, projects future income with Monte Carlo simulation, scores sustainability, generates AI-powered dividend briefs, posts a weekly Discord digest, and **(new in v0.2)** ships with a beautiful local web dashboard pre-loaded with 40 popular dividend ETFs and stocks.
+Personal dividend portfolio tracker. Tracks dividend payments across brokers, projects future income with Monte Carlo simulation, scores sustainability, generates AI-powered dividend briefs, posts a weekly Discord digest, and ships with a local web dashboard pre-loaded with 40 popular dividend ETFs and stocks. **New in v0.4:** rich ticker detail pages with fundamentals (P/E, P/S, market cap, beta, FCF…), ETF holdings + sector mix, news feed with freshness markers, and a Cmd+K command palette.
 
 [![CI](https://github.com/forward1019/dividend-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/forward1019/dividend-dash/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -41,11 +41,20 @@ bun run web              # http://localhost:5173
 Four pages:
 
 - **Dashboard** — searchable, sortable, filterable grid of all 40 universe tickers with sparklines, forward yield, sustainability score, growth streak, 5y CAGR
-- **Ticker drill-down** (`/ticker/SCHD`) — annual + per-payment + TTM dividend charts, sustainability scorecard breakdown, recent payments, 12-cell stat grid
+- **Ticker drill-down** (`/ticker/SCHD`) — hero with 52-week range bar, dividend stat grid, annual / per-payment / TTM dividend charts, sustainability scorecard breakdown, **fundamentals panel (v0.4)** with P/E / P/S / P/B / PEG / market cap / beta / EPS / ROE / FCF / debt / cash, **ETF holdings list + sector donut (v0.4)** for ETFs, **latest news feed with freshness markers (v0.4)**, and a collapsed company/fund summary
 - **Compare** (`/compare?t=SCHD&t=VYM&t=VIG`) — overlay TTM dividend curves for up to 6 tickers, side-by-side metric table
 - **Calendar** — 90-day projected ex-dividend calendar grouped by month
 
+Press **⌘K** (or Ctrl+K, or `/`) anywhere to open the command palette and jump to any ticker in two keystrokes.
+
 The 40-ticker universe spans Dividend Kings (KO, JNJ, PG, MMM, EMR), Aristocrats (PEP, MCD, WMT, ABBV, CVX, XOM, LMT), high-yield stocks (MO, T, VZ, PFE), REITs / BDCs (O, VICI, STAG, MAIN), and 20 popular dividend ETFs across core (SCHD, VYM, DVY), growth (VIG, DGRO, NOBL, SDY), high-yield (SPYD, HDV, FDVV, SDIV, DIV, RDIV), income / covered-call (JEPI, JEPQ, QYLD, PFF), and international (IDV, VYMI, REET) categories. Edit `src/web/tickers.ts` to add or remove tickers, then re-run `bun run seed-universe`.
+
+### Refreshing data
+
+```bash
+bun run seed-universe   # full backfill: 20y dividends + quotes + snapshots + holdings + news
+bun run refresh-quotes  # light: skip dividend backfill, refresh just quotes/snapshots/holdings/news (cron-friendly)
+```
 
 JSON API: `GET /api/universe`, `GET /api/ticker/:t`, `GET /api/calendar`.
 

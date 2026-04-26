@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] — 2026-04-25
+
+Researched what makes Snowball Analytics, Sharesight, Stock Events, Seeking
+Alpha, and Yahoo Finance feel slick. Stole the best ideas. The ticker
+detail page is now built around real, scannable visual patterns instead of
+just a wall of dividend stats.
+
+### Added
+
+**Rich ticker detail page**
+- Hero shows exchange · sector · industry under the company name and a new
+  **52-week range bar** with a marker for the current price.
+- **Fundamentals panel** with 18 metric cards for stocks: P/E (TTM + Fwd),
+  P/S, P/B, PEG, market cap, volume, beta, EPS, ROE, profit margin, free
+  cash flow, total debt, total cash, broker dividend rate, broker yield,
+  payout ratio, and ex-dividend date. ETFs see a fund-tuned variant: AUM,
+  expense ratio, yield, P/E, beta, volume, YTD/3y/5y returns, fund family,
+  and inception.
+- **ETF holdings** section (ETF detail pages only): top-10 holdings as a
+  horizontal bar list with sector-colored allocation bars. Click any
+  in-universe holding to drill into it. The whole list links back to the
+  fund's full holdings count.
+- **Sector mix** donut chart with full legend driven by yfinance's
+  `topHoldings.sectorWeightings`.
+- **Latest news** feed with up to 8 items per ticker, freshness dots
+  (red < 1h, amber < 6h, gray older), publisher attribution, and human
+  timestamps ("3h ago"). Clicking any item opens the source page.
+- Collapsed **About** section showing the company / fund description and
+  homepage link, sourced from yfinance `assetProfile.longBusinessSummary`.
+
+**Command palette (Cmd+K / Ctrl+K)**
+- Sticky search button in the header opens a centered overlay palette.
+- Cmd+K (or Ctrl+K, or `/`) toggles it from anywhere.
+- Fuzzy ranks the universe by ticker prefix, ticker contains, name
+  contains, and category match.
+- ↑/↓ to navigate, ↵ to open, Esc to close. Backdrop click closes too.
+
+**New data plumbing**
+- `quote_snapshot` table captures the rich market-data picture per ticker
+  per fetch (P/E, P/S, P/B, market cap, beta, EPS, FCF, ROE, debt, cash,
+  fund returns, expense ratio, AUM, sector / industry, summary, website).
+- `etf_holdings` and `etf_profile` tables store top-10 holdings and the
+  sector breakdown JSON.
+- `ticker_news` table caches the latest news per ticker, deduped by
+  `(ticker, link)`. Auto-prunes anything older than 90 days on each
+  insert so the table stays bounded.
+- New ingest module `src/ingest/yahoo-extras.ts` fetches everything via
+  `yf.quoteSummary` (price, summaryDetail, summaryProfile, assetProfile,
+  defaultKeyStatistics, financialData, fundProfile, fundPerformance,
+  topHoldings) plus `yf.search` for news. Tolerant of missing modules —
+  ETFs, mutual funds, and foreign tickers all expose different shapes.
+
+**New CLI surface**
+- `bun run refresh-quotes` — light wrapper over
+  `seed-universe -- --quotes-only`. Skips the heavy 20-year dividend
+  backfill and only refreshes prices, snapshots, holdings, and news.
+  Designed to be safe on a daily cron.
+- `--quotes-only` and `--skip-news` flags on `seed-universe` for the same.
+
+### Changed
+
+- Header version badge bumped to `v0.4`.
+- Schema version bumped to `2`.
+- The original header search input is replaced by the command-palette
+  trigger button. The `/ticker?symbol=…` redirect route is preserved for
+  bookmarks / deep links.
+
+### Internal
+
+- 11 new unit tests in `tests/yahoo-extras.test.ts` cover snapshot upsert
+  idempotency, holdings replace-on-refetch, news dedup, and the 90-day
+  news pruning rule. Total: 115 passing tests.
+- Research brief checked in at
+  `docs/research/2026-04-25-ui-redesign-brief.md` documenting the visual
+  patterns that drove this redesign.
+
 ## [0.3.0] — 2026-04-25
 
 Three-theme support for the web dashboard: **Light**, **Light-Dark**

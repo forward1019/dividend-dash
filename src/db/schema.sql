@@ -140,6 +140,121 @@ CREATE TABLE IF NOT EXISTS ingest_log (
   UNIQUE(broker, source_sha256)
 );
 
+-- Quote snapshot: rich market-data picture per ticker. One row per ticker
+-- per fetch_date. Used by the v0.4 detail page to render a full
+-- fundamentals panel (P/E, P/S, P/B, market cap, volume, beta, EPS, etc.)
+-- alongside the existing dividend-focused stats. Numeric fields default
+-- to native floats — yfinance returns them as floats and exact precision
+-- is not required for display.
+CREATE TABLE IF NOT EXISTS quote_snapshot (
+  ticker             TEXT NOT NULL,
+  fetch_date         TEXT NOT NULL,             -- ISO YYYY-MM-DD when we fetched
+  short_name         TEXT,
+  long_name          TEXT,
+  exchange           TEXT,
+  currency           TEXT,
+  quote_type         TEXT,                      -- 'EQUITY' | 'ETF' | 'MUTUALFUND' | …
+  sector             TEXT,
+  industry           TEXT,
+  summary            TEXT,                      -- assetProfile longBusinessSummary or fund summary
+  website            TEXT,
+  -- Market data
+  price              REAL,                      -- regular market price (USD or `currency`)
+  market_cap         REAL,
+  volume             REAL,
+  avg_volume_3m      REAL,
+  beta               REAL,
+  fifty_two_week_high REAL,
+  fifty_two_week_low  REAL,
+  fifty_two_week_change_pct REAL,
+  -- Earnings + valuation
+  eps_trailing       REAL,
+  eps_forward        REAL,
+  pe_trailing        REAL,
+  pe_forward         REAL,
+  ps_ratio           REAL,
+  pb_ratio           REAL,
+  peg_ratio          REAL,
+  enterprise_value   REAL,
+  ev_to_revenue      REAL,
+  ev_to_ebitda       REAL,
+  -- Cashflow + balance sheet
+  free_cash_flow     REAL,
+  operating_cash_flow REAL,
+  total_debt         REAL,
+  total_cash         REAL,
+  return_on_equity   REAL,
+  return_on_assets   REAL,
+  profit_margins     REAL,
+  -- Dividend (latest broker numbers, may differ from our computed series)
+  dividend_rate      REAL,
+  dividend_yield     REAL,                      -- 0..1 fraction
+  payout_ratio       REAL,
+  ex_dividend_date   TEXT,
+  -- ETF specifics (top-level numbers; full holdings live in etf_holdings)
+  expense_ratio      REAL,
+  total_assets       REAL,
+  fund_family        TEXT,
+  inception_date     TEXT,
+  ytd_return         REAL,
+  three_year_return  REAL,
+  five_year_return   REAL,
+  raw_json           TEXT,                       -- raw quoteSummary modules for debugging
+  fetched_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(ticker, fetch_date),
+  FOREIGN KEY(ticker) REFERENCES securities(ticker)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_snapshot_ticker ON quote_snapshot(ticker, fetch_date DESC);
+
+-- ETF holdings: top N positions for an ETF as of a point in time. yfinance's
+-- topHoldings module returns up to ~10. We additionally store sector/asset
+-- breakdowns as JSON blobs since they're cheap and rarely queried.
+CREATE TABLE IF NOT EXISTS etf_holdings (
+  etf_ticker       TEXT NOT NULL,
+  fetch_date       TEXT NOT NULL,
+  position         INTEGER NOT NULL,            -- 1-based rank
+  holding_symbol   TEXT,
+  holding_name     TEXT NOT NULL,
+  allocation_pct   REAL NOT NULL,               -- 0..1 fraction
+  PRIMARY KEY(etf_ticker, fetch_date, position),
+  FOREIGN KEY(etf_ticker) REFERENCES securities(ticker)
+);
+
+CREATE INDEX IF NOT EXISTS idx_etf_holdings_etf ON etf_holdings(etf_ticker, fetch_date DESC);
+
+CREATE TABLE IF NOT EXISTS etf_profile (
+  etf_ticker         TEXT NOT NULL,
+  fetch_date         TEXT NOT NULL,
+  total_holdings     INTEGER,                  -- nullable; yfinance doesn't always provide
+  sector_weights_json TEXT,                    -- [{sector: "Technology", pct: 0.32}, …]
+  asset_classes_json  TEXT,                    -- {stockPosition, bondPosition, cashPosition, …}
+  bond_ratings_json   TEXT,
+  bond_holdings_json  TEXT,
+  raw_json            TEXT,
+  PRIMARY KEY(etf_ticker, fetch_date),
+  FOREIGN KEY(etf_ticker) REFERENCES securities(ticker)
+);
+
+-- Latest news per ticker. Items are deduped by (ticker, link) so re-fetching
+-- doesn't grow the table linearly. We keep a fixed window — anything older
+-- than ~90 days is auto-pruned at fetch time.
+CREATE TABLE IF NOT EXISTS ticker_news (
+  ticker         TEXT NOT NULL,
+  link           TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  publisher      TEXT,
+  published_at   TEXT NOT NULL,                -- ISO 8601 with timezone
+  summary        TEXT,
+  thumbnail_url  TEXT,
+  related_tickers TEXT,                        -- comma-separated; for cross-link
+  fetched_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(ticker, link),
+  FOREIGN KEY(ticker) REFERENCES securities(ticker)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticker_news_ticker_date ON ticker_news(ticker, published_at DESC);
+
 -- Schema version tracking (lightweight, not a full migrations framework).
 CREATE TABLE IF NOT EXISTS schema_version (
   version    INTEGER PRIMARY KEY,
@@ -147,3 +262,4 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 INSERT OR IGNORE INTO schema_version(version) VALUES (1);
+INSERT OR IGNORE INTO schema_version(version) VALUES (2);

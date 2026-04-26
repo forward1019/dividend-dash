@@ -16,6 +16,14 @@
 
 import { Database } from 'bun:sqlite';
 
+import {
+  fetchEtfHoldings,
+  fetchQuoteSnapshot,
+  fetchTickerNews,
+  upsertEtfHoldings,
+  upsertNews,
+  upsertQuoteSnapshot,
+} from '../ingest/yahoo-extras.ts';
 import { fetchAndUpsertDividends, fetchAndUpsertSecurity } from '../ingest/yahoo-finance.ts';
 import {
   fetchFundamentals,
@@ -30,10 +38,27 @@ import { DIVIDEND_UNIVERSE, getTicker } from '../web/tickers.ts';
 interface CliArgs {
   tickers: string[];
   refreshPricesOnly: boolean;
+  /**
+   * When true, skip the heavy 20-year dividend backfill and ONLY refresh:
+   *   - latest quote price
+   *   - rich quote snapshot (P/E, P/S, market cap, etc.)
+   *   - ETF holdings (when applicable)
+   *   - latest news
+   * Designed to be safe to run on a daily cron without burning yfinance
+   * rate limits.
+   */
+  quotesOnly: boolean;
+  /** Skip fetching news entirely (for offline/testing scenarios). */
+  skipNews: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { tickers: [], refreshPricesOnly: false };
+  const args: CliArgs = {
+    tickers: [],
+    refreshPricesOnly: false,
+    quotesOnly: false,
+    skipNews: false,
+  };
   for (const a of argv.slice(2)) {
     if (a.startsWith('--ticker=')) {
       args.tickers = a
@@ -43,6 +68,10 @@ function parseArgs(argv: string[]): CliArgs {
         .filter(Boolean);
     } else if (a === '--refresh-prices') {
       args.refreshPricesOnly = true;
+    } else if (a === '--quotes-only') {
+      args.quotesOnly = true;
+    } else if (a === '--skip-news') {
+      args.skipNews = true;
     }
   }
   return args;
@@ -68,13 +97,17 @@ async function main() {
 
   for (const t of targets) {
     const ticker = t.ticker;
+    const isEtf = (() => {
+      const u = getTicker(ticker);
+      return u?.kind === 'etf';
+    })();
     try {
       // 1. Security metadata (always)
       log.info(`[${ticker}] fetching metadata`);
       await fetchAndUpsertSecurity(db, ticker);
 
-      // 2. Dividend history (skip on refresh-prices mode)
-      if (!args.refreshPricesOnly) {
+      // 2. Dividend history (skip on refresh-prices / quotes-only modes)
+      if (!args.refreshPricesOnly && !args.quotesOnly) {
         log.info(`[${ticker}] fetching 20y dividend history`);
         const result = await fetchAndUpsertDividends(db, ticker);
         log.info(`[${ticker}] dividends: ${result.inserted} inserted / ${result.total} fetched`);
@@ -92,11 +125,39 @@ async function main() {
         log.warn(`[${ticker}] no quote available`);
       }
 
-      // 4. Fundamentals (best effort — ETFs often return nothing)
+      // 4. Legacy fundamentals (sustainability scorecard — keep for compat).
       log.info(`[${ticker}] fetching fundamentals`);
       const fund = await fetchFundamentals(ticker);
       if (fund) {
         upsertFundamentals(db, fund);
+      }
+
+      // 5. Rich quote snapshot (P/E, P/S, market cap, beta, etc.) — new in v0.4.
+      log.info(`[${ticker}] fetching quote snapshot`);
+      const snap = await fetchQuoteSnapshot(ticker);
+      if (snap) {
+        upsertQuoteSnapshot(db, snap);
+      }
+
+      // 6. ETF holdings (only for ETFs / mutual funds) — new in v0.4.
+      if (isEtf) {
+        log.info(`[${ticker}] fetching ETF holdings`);
+        const holdings = await fetchEtfHoldings(ticker);
+        if (holdings) {
+          upsertEtfHoldings(db, ticker, holdings);
+          log.info(
+            `[${ticker}] holdings: top ${holdings.holdings.length} fetched, ${holdings.breakdown.sectorWeights.length} sector weights`,
+          );
+        }
+      }
+
+      // 7. Latest news — new in v0.4.
+      if (!args.skipNews) {
+        log.info(`[${ticker}] fetching news`);
+        const news = await fetchTickerNews(ticker, 10);
+        if (news.length > 0) {
+          upsertNews(db, ticker, news);
+        }
       }
 
       ok++;

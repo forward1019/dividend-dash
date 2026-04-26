@@ -27,6 +27,10 @@ import {
   buildTickerCard,
   clearCache,
   getDividendHistory,
+  getEtfHoldings,
+  getEtfProfile,
+  getLatestQuoteSnapshot,
+  getTickerNews,
 } from './data.ts';
 import { getTicker } from './tickers.ts';
 import { renderCalendarPage } from './views/calendar.ts';
@@ -123,7 +127,24 @@ const server = Bun.serve({
         }));
         const cagr1y = dividendCagr(events, 1);
         const cagr3y = dividendCagr(events, 3);
-        return html(renderTickerPage({ card, history, cagr1y, cagr3y }));
+        // v0.4 enrichments — all are nullable; the view degrades gracefully
+        // when refresh-quotes hasn't been run yet.
+        const snapshot = getLatestQuoteSnapshot(sym);
+        const holdings = u.kind === 'etf' ? getEtfHoldings(sym) : [];
+        const etfProfile = u.kind === 'etf' ? getEtfProfile(sym) : null;
+        const news = getTickerNews(sym, 8);
+        return html(
+          renderTickerPage({
+            card,
+            history,
+            cagr1y,
+            cagr3y,
+            snapshot,
+            holdings,
+            etfProfile,
+            news,
+          }),
+        );
       }
 
       if (path === '/compare') {
