@@ -71,7 +71,7 @@ Every refresh runs a Yahoo↔Stooq price cross-check (`src/ingest/stooq.ts`). Th
 - Stooq returns N/D for a ticker (`missing-source` — Stooq doesn't cover it)
 - Our DB has no Yahoo price for a ticker we tried to validate (`no-yahoo`)
 
-Today's baseline: 40/40 universe tickers agree to the cent. Any deviation is real news, not a false alarm.
+Baseline expectation: every universe ticker agrees with Stooq to the cent. The validator prints `agree/total` so any deviation surfaces as a numeric drop in the headline. Any real divergence is news, not a false alarm.
 
 ## Manual operations
 

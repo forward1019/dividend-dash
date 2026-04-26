@@ -1,5 +1,5 @@
 /**
- * One-shot seed for the dividend universe (40 popular ETFs + stocks).
+ * One-shot seed for the dividend universe (60 popular ETFs + stocks).
  *
  * For each ticker:
  *   1. Upsert security metadata (name, sector, industry, exchange)
@@ -9,7 +9,7 @@
  *
  * Safe to re-run; uses ON CONFLICT upserts everywhere.
  *
- *   bun run seed-universe                      # all 40 tickers
+ *   bun run seed-universe                      # all 60 tickers
  *   bun run seed-universe -- --ticker=SCHD,KO  # subset
  *   bun run seed-universe -- --refresh-prices  # quotes + fundamentals only
  */
@@ -53,7 +53,7 @@ interface CliArgs {
   skipNews: boolean;
   /**
    * Skip the post-fetch Stooq cross-validation. Off by default — the
-   * validation is cheap (~10s for 40 tickers) and surfaces real
+   * validation is cheap (~15s for 60 tickers) and surfaces real
    * Yahoo-vs-reality drift the moment it happens.
    */
   skipValidation: boolean;

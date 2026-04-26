@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added — universe expansion (40 → 60 tickers)
+
+The watchlist had real coverage gaps for a dividend tracker:
+zero big-cap tech dividend payers, zero financials, only three REITs,
+and only one BDC/MLP. Bumped to 60 tickers across 11 categories. Full
+seed runtime goes from ~12 min to ~18 min; daily refresh ~3 min → ~4–5 min.
+
+- **New category `growth_stock`** for dividend growers with <25-year
+  streaks (tech + financials). Surfaces as "Dividend growers" in the UI.
+- **+5 tech div growers**: AAPL, MSFT, AVGO, TXN, CSCO.
+- **+4 financial div growers**: JPM, BLK, MS, USB.
+- **+5 major REITs**: AMT, PLD, EQIX, AVB, WELL.
+- **+3 Dividend Kings**: CL, KMB, LOW.
+- **+3 BDCs / MLPs**: ARCC, EPD, ET.
+- Dashboard "Universe at a glance" subtitle is now driven by
+  `totalCount` instead of a hard-coded `40`, so it stays correct as the
+  list evolves.
+- Updated comments, READMEs, and ops doc references from `40` to `60`
+  (or removed the count entirely where the validator output already
+  prints it).
+
+### Migration note
+
+After pulling, run `bun run seed-universe` once to backfill the 20
+new tickers (20-year dividend history + quotes + fundamentals + ETF
+holdings + news). Existing data is untouched (idempotent upserts).
+
 ## [0.5.0] — 2026-04-25
 
 UI rebuild. The dashboard was honest but plain. v0.5 makes it sleek, dense,

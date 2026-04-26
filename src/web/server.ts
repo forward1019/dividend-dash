@@ -6,7 +6,7 @@
  * Then open http://localhost:5173.
  *
  * Routes:
- *   GET /                  — dashboard with all 40 universe tickers
+ *   GET /                  — dashboard with all 60 universe tickers
  *   GET /ticker/:symbol    — per-ticker drill-down
  *   GET /ticker?symbol=X   — search redirect (used by header search box)
  *   GET /compare?t=X&t=Y   — compare up to 6 tickers

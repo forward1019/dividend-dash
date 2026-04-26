@@ -11,7 +11,7 @@
  * too (e.g. VYMI.US, REET.US) — Stooq normalizes US listings under the
  * `.US` suffix.
  *
- * No rate-limiting issues observed at our scale (40 tickers/day), but
+ * No rate-limiting issues observed at our scale (60 tickers/day), but
  * we still throttle politely to 5 req/sec.
  */
 
@@ -164,7 +164,7 @@ export async function validatePriceAgainstStooq(
  * of agreement; the caller decides whether to log/alert/abort.
  *
  * Bounded concurrency intentionally low (1) — Stooq is generous but
- * we have no business hammering a free public service for 40 tickers
+ * we have no business hammering a free public service for 60 tickers
  * in parallel.
  */
 export async function validateUniverseAgainstStooq(

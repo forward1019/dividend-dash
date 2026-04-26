@@ -3,7 +3,7 @@
  * compute every metric the UI needs from SQLite + analytics modules.
  *
  * Everything cached to a 60-second in-memory map so a dashboard refresh
- * doesn't re-query 40 tickers' worth of analytics.
+ * doesn't re-query 60 tickers' worth of analytics.
  */
 
 import { Database } from 'bun:sqlite';

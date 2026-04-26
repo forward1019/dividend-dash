@@ -102,7 +102,7 @@ export function renderDashboard(data: DashboardData): string {
       <div class="section-h">
         <div class="flex items-baseline gap-3">
           <span class="label">Universe at a glance</span>
-          <span class="text-[12px] muted hidden md:inline">how the 40 names break down</span>
+          <span class="text-[12px] muted hidden md:inline">how the ${totalCount} names break down</span>
         </div>
       </div>
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
