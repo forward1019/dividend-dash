@@ -116,11 +116,29 @@ async function main() {
       log.info(`[${ticker}] fetching metadata`);
       await fetchAndUpsertSecurity(db, ticker);
 
-      // 2. Dividend history (skip on refresh-prices / quotes-only modes)
+      // 2. Dividend history.
+      //   - Default (full seed): 20-year backfill.
+      //   - --refresh-prices / --quotes-only: 90-day window so new ex-dividend
+      //     declarations land in the DB without paying the 20y price.
+      //     Existing rows are de-duped by (ticker, ex_date, source) UNIQUE,
+      //     so re-fetching the recent window is idempotent.
       if (!args.refreshPricesOnly && !args.quotesOnly) {
         log.info(`[${ticker}] fetching 20y dividend history`);
         const result = await fetchAndUpsertDividends(db, ticker);
         log.info(`[${ticker}] dividends: ${result.inserted} inserted / ${result.total} fetched`);
+      } else {
+        log.info(`[${ticker}] fetching recent dividend window (last 90 days)`);
+        const recentStart = (() => {
+          const d = new Date();
+          d.setUTCDate(d.getUTCDate() - 90);
+          return d.toISOString().slice(0, 10);
+        })();
+        const result = await fetchAndUpsertDividends(db, ticker, { startDate: recentStart });
+        if (result.inserted > 0) {
+          log.info(
+            `[${ticker}] new dividends: ${result.inserted} inserted (out of ${result.total})`,
+          );
+        }
       }
 
       // 3. Latest quote price
