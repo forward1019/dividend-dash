@@ -208,8 +208,14 @@ export function renderTickerPage(data: TickerPageData): string {
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div class="kpi">
           <span class="label">Forward yield</span>
-          <div class="value ${yldColor}">${fmtPct(c.forwardYield, 2)}</div>
-          <div class="sub">${c.ttmDps !== null ? `TTM DPS $${c.ttmDps.toFixed(2)}` : '—'}</div>
+          <div class="value ${yldColor}">${fmtPct(c.forwardYield, 2)}${c.hasSpecialDividends ? ' <span class="text-[10px] muted ml-1" title="Forward yield is computed from regular dividends only — specials/supplementals are excluded">✦ excl. specials</span>' : ''}</div>
+          <div class="sub">${
+            c.ttmDps !== null
+              ? c.hasSpecialDividends && c.ttmDpsRegular !== null && c.ttmDpsRegular !== c.ttmDps
+                ? `TTM DPS $${c.ttmDpsRegular.toFixed(2)} regular / $${c.ttmDps.toFixed(2)} total`
+                : `TTM DPS $${c.ttmDps.toFixed(2)}`
+              : '—'
+          }</div>
         </div>
         <div class="kpi">
           <span class="label">5y dividend CAGR</span>
