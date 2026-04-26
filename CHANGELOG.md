@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] — 2026-04-25
+
+UI rebuild. The dashboard was honest but plain. v0.5 makes it sleek, dense,
+editorial, and visibly Seeking-Alpha-flavored without copying anyone. New
+design system, new dashboard sections, new ticker quote hero, new compare
+scatter, new calendar income KPIs, new income simulator. Two new files
+worth reading: `DESIGN.md` (the design system reference) and the rewritten
+`src/web/views/layout.ts`.
+
+### Added
+
+**Design system (`DESIGN.md` + `layout.ts`)**
+- Three-font type system: **Source Serif 4** for display headlines,
+  **Inter** for UI, **JetBrains Mono** with tabular nums for every number.
+- CSS-variable color tokens — light and dark sets in one place.
+- Component utilities: `.kpi`, `.delta`, `.delta-pos/neg`, `.pill`,
+  `.grade-A..F`, `.section-h`, `.data-table`, `.ticker-card`,
+  `.anchor-ribbon`, `.range-bar`, `.news-item`, `.bar-track/-fill`.
+- Refined dark and light themes — warm off-white in light, deep ink in
+  dark, single-accent emerald with amber for warnings.
+
+**Dashboard**
+- Hero KPI strip with universe overview (tickers, avg yield, avg safety,
+  90-day income runway).
+- **Universe at a Glance** — three new charts: sector mix donut,
+  yield distribution histogram, payment frequency mini-bars.
+- **Income Outlook** — 30/60/90 day per-share projections with a
+  13-week bar chart and a "Largest upcoming" mini-list.
+- **Movers & Standouts** — Top yield / Fastest 5y growth / Longest
+  streak leaderboards.
+- Ticker cards now use letter-grade safety badges (A+/A/B/C/D/F) and a
+  cleaner, denser layout.
+
+**Ticker page**
+- Quote-style hero: serif symbol, big mono price, pills for kind /
+  category / cadence, 52-week range bar with a marker.
+- **Quick Take** four-KPI strip: Forward yield, 5y CAGR, Payout (or
+  Expense for ETFs), Sustainability with letter grade.
+- **Sticky anchor ribbon**: Dividends · Fundamentals · Holdings (ETFs) ·
+  Income simulator · News · About — auto-highlights the current section.
+- **Income simulator**: type a dollar amount, see Year-1, Year-5, Year-10
+  income and 10-year cumulative based on current yield + 5y CAGR.
+
+**Compare**
+- **Yield-vs-5y-Growth scatter** showing all 40 tickers with selected
+  ones highlighted — the "where does this name live in the universe"
+  picture.
+- Default state pre-loads the top 3 by safety so the page is never blank.
+
+**Calendar**
+- 30/60/90-day per-share income KPI strip at the top.
+- Month-grouped tables with subtotals and urgency pills.
+
+### Changed
+
+- Replaced the score ring (2-digit number) with letter grades (A+/A/B/C/D/F)
+  across cards, ticker page, and compare table — closer to how investing
+  publications present sustainability.
+- All charts now read colors from a richer `__chartTheme()` palette
+  (12-color sector wheel, semantic emerald/cyan/amber/rose).
+- Header is taller, brand mark is gradient, search trigger is wider, theme
+  toggle is more compact.
+- Footer is simpler and properly bordered.
+
 ## [0.4.0] — 2026-04-25
 
 Researched what makes Snowball Analytics, Sharesight, Stock Events, Seeking

@@ -24,7 +24,10 @@ import { log } from '../lib/logger.ts';
 import {
   buildAllCards,
   buildCalendar,
+  buildIncomeOutlook,
+  buildLeaderboards,
   buildTickerCard,
+  buildUniverseStats,
   clearCache,
   getDividendHistory,
   getEtfHoldings,
@@ -100,7 +103,10 @@ const server = Bun.serve({
         for (const c of cards) {
           history[c.ticker] = getDividendHistory(c.ticker);
         }
-        return html(renderDashboard({ cards, history }));
+        const stats = buildUniverseStats(cards);
+        const outlook = buildIncomeOutlook();
+        const leaderboards = buildLeaderboards(cards);
+        return html(renderDashboard({ cards, history, stats, outlook, leaderboards }));
       }
 
       // /ticker?symbol=XYZ — redirect from header search
@@ -150,17 +156,26 @@ const server = Bun.serve({
       if (path === '/compare') {
         const allCards = buildAllCards();
         const requested = url.searchParams.getAll('t').map((t) => t.toUpperCase());
-        const selected = requested
+        let selected = requested
           .map((sym) => {
             const u = getTicker(sym);
             return u ? buildTickerCard(u) : null;
           })
           .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        // Empty state: pre-load the top 3 by safety so the page is never blank.
+        const isPreview = selected.length === 0;
+        if (isPreview) {
+          selected = [...allCards]
+            .sort((a, b) => b.sustainability.total - a.sustainability.total)
+            .slice(0, 3);
+        }
+
         const series: Record<string, { exDate: string; ttm: number }[]> = {};
         for (const c of selected) {
           series[c.ticker] = computeTtm(getDividendHistory(c.ticker));
         }
-        return html(renderComparePage({ allCards, selected, series }));
+        return html(renderComparePage({ allCards, selected, series, isPreview }));
       }
 
       if (path === '/calendar') {

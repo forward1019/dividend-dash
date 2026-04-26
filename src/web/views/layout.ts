@@ -1,29 +1,19 @@
 /**
- * Shared HTML layout. All pages render through this so navigation, theme,
- * and design system are consistent.
+ * Shared HTML layout. All pages render through this.
  *
- * Theming
- * -------
- * Three user-selectable themes:
- *   - "light"      — forced light mode
- *   - "dark"       — forced dark mode (the original v0.2 look)
- *   - "light-dark" — auto-follow the OS via prefers-color-scheme (default)
+ * v0.5 design system rewrite. See DESIGN.md for the full reference.
  *
- * Implementation:
- *   - The user preference is persisted in localStorage as `dd_theme`.
- *   - A synchronous pre-paint script in <head> resolves the preference into a
- *     concrete `data-resolved-theme` ("light" | "dark") on <html> before the
- *     first paint (no flash-of-wrong-theme).
- *   - CSS overrides target `[data-resolved-theme="light"]` and remap the
- *     slate utility classes used across every view, so individual views
- *     don't need theme-aware class soup.
- *   - When the OS scheme flips while the user is in "light-dark" mode, a
- *     matchMedia listener swaps the resolved attribute live.
- *   - Switching themes from the toggle reloads the page — Chart.js
- *     instances need to be re-created with new palette colors anyway, and
- *     URL state (search params, selected tickers) is fully preserved.
- *   - Charts read colors from `window.__chartTheme()` at construction time,
- *     so the same chart code renders correctly in either resolved theme.
+ * Highlights:
+ *   - Editorial type system: Source Serif 4 for display, Inter for UI,
+ *     JetBrains Mono with tabular-nums for all numerics.
+ *   - Refined dark + light palettes (warm off-white in light, deeper
+ *     ink in dark) with a single accent (emerald) and amber for
+ *     highlights / warnings.
+ *   - Component utility classes: .kpi, .delta, .delta-pos, .delta-neg,
+ *     .data-table, .section-h, .grade-A..F, .pill, .ticker-card.
+ *   - Header: cleaner brand mark, search button + ⌘K, segmented theme
+ *     toggle, optional "as of" timestamp slot.
+ *   - Cmd+K palette: unchanged (already great).
  */
 
 export interface LayoutOpts {
@@ -34,6 +24,8 @@ export interface LayoutOpts {
   head?: string;
   /** Extra footer scripts to run after body. */
   footerScripts?: string;
+  /** Optional "as of" line in the header for data freshness. */
+  asOf?: string | null;
 }
 
 const NAV_LINKS: { href: string; label: string; key: LayoutOpts['active'] }[] = [
@@ -61,11 +53,6 @@ export function escapeHtml(s: string | null | undefined): string {
     .replace(/'/g, '&#039;');
 }
 
-/**
- * Pre-paint script — runs synchronously in <head> BEFORE Tailwind/CSS so the
- * theme attributes are set before first paint. Avoids a flash of dark
- * content on a light-preference user, or vice versa.
- */
 const PREPAINT_SCRIPT = `
 (function() {
   try {
@@ -81,7 +68,6 @@ const PREPAINT_SCRIPT = `
     root.classList.toggle('dark', resolved === 'dark');
     root.style.colorScheme = resolved;
   } catch (e) {
-    // localStorage blocked etc. — fall back to dark, which is the original look
     document.documentElement.setAttribute('data-theme', 'dark');
     document.documentElement.setAttribute('data-resolved-theme', 'dark');
     document.documentElement.classList.add('dark');
@@ -89,20 +75,13 @@ const PREPAINT_SCRIPT = `
 })();
 `;
 
-/**
- * Theme runtime — wires up the toggle, persistence, and live OS-scheme
- * watching. Runs after Alpine/Chart.js so charts can register a refresh
- * helper that the toggle calls on swap.
- */
 const THEME_RUNTIME_SCRIPT = `
 (function() {
   var root = document.documentElement;
-
   function resolve(pref) {
     if (pref === 'light' || pref === 'dark') return pref;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-
   function apply(pref, opts) {
     var prev = root.getAttribute('data-resolved-theme');
     var next = resolve(pref);
@@ -111,26 +90,20 @@ const THEME_RUNTIME_SCRIPT = `
     root.classList.toggle('dark', next === 'dark');
     root.style.colorScheme = next;
     try { localStorage.setItem('dd_theme', pref); } catch(e) {}
-    // If the resolved theme actually changed, reload so chart palettes pick
-    // up the new colors. Page state (URL params) is preserved.
     if (opts && opts.reloadOnSwap && prev && prev !== next) {
       window.location.reload();
     }
   }
-
-  // Wire toggle buttons (rendered as a segmented control in the header)
   var btns = document.querySelectorAll('[data-theme-set]');
   for (var i = 0; i < btns.length; i++) {
     (function(btn) {
       btn.addEventListener('click', function() {
         var pref = btn.getAttribute('data-theme-set');
         apply(pref, { reloadOnSwap: true });
-        // Re-paint segmented control immediately even if no reload triggers
         updateActive();
       });
     })(btns[i]);
   }
-
   function updateActive() {
     var current = root.getAttribute('data-theme') || 'light-dark';
     var all = document.querySelectorAll('[data-theme-set]');
@@ -142,31 +115,16 @@ const THEME_RUNTIME_SCRIPT = `
     }
   }
   updateActive();
-
-  // Watch OS preference for users in "light-dark" mode
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
   var mqListener = function() {
     var pref = root.getAttribute('data-theme');
-    if (pref === 'light-dark') {
-      apply('light-dark', { reloadOnSwap: true });
-    }
+    if (pref === 'light-dark') apply('light-dark', { reloadOnSwap: true });
   };
   if (mq.addEventListener) mq.addEventListener('change', mqListener);
-  else if (mq.addListener) mq.addListener(mqListener); // Safari < 14
+  else if (mq.addListener) mq.addListener(mqListener);
 })();
 `;
 
-/**
- * Command-palette runtime — Cmd+K / Ctrl+K opens a centered search overlay
- * that fuzzy-matches the universe and navigates to /ticker/SYMBOL.
- *
- * Self-contained vanilla JS so it works on every page without Alpine.
- *
- *   - Trigger:    Cmd/Ctrl-K, click the header search button, or `/`
- *   - Close:      Esc, backdrop click, or pick a result
- *   - Navigate:   ↑/↓ arrows; Enter selects highlighted item
- *   - Data:       fetched once from /api/universe, cached in memory
- */
 const CMDK_RUNTIME_SCRIPT = `
 (function() {
   var overlay = document.getElementById('dd-cmdk');
@@ -175,30 +133,25 @@ const CMDK_RUNTIME_SCRIPT = `
   var trigger = document.getElementById('dd-cmdk-trigger');
   if (!overlay || !input || !results) return;
 
-  var universe = null;       // cached universe array
-  var highlight = 0;         // index of highlighted result
-  var lastFiltered = [];     // current matches in display order
+  var universe = null;
+  var highlight = 0;
+  var lastFiltered = [];
   var loadPromise = null;
 
   function ensureUniverse() {
     if (universe) return Promise.resolve(universe);
     if (loadPromise) return loadPromise;
     loadPromise = fetch('/api/universe').then(function(r) { return r.json(); }).then(function(data) {
-      // Normalize — trim to fields we actually use to keep filter() cheap.
       universe = (Array.isArray(data) ? data : []).map(function(c) {
         return {
-          ticker: c.ticker,
-          name: c.name,
-          kind: c.kind,
-          categoryLabel: c.categoryLabel,
-          forwardYield: c.forwardYield,
+          ticker: c.ticker, name: c.name, kind: c.kind,
+          categoryLabel: c.categoryLabel, forwardYield: c.forwardYield,
         };
       });
       return universe;
     }).catch(function() { universe = []; return universe; });
     return loadPromise;
   }
-
   function open() {
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
@@ -214,12 +167,10 @@ const CMDK_RUNTIME_SCRIPT = `
     document.body.style.overflow = '';
   }
   function isOpen() { return overlay.classList.contains('flex'); }
-
   function fmtPctSafe(v) {
     if (typeof v !== 'number' || isNaN(v)) return '';
     return (v * 100).toFixed(2) + '%';
   }
-
   function score(c, q) {
     if (!q) return 1;
     var t = c.ticker.toLowerCase();
@@ -232,12 +183,10 @@ const CMDK_RUNTIME_SCRIPT = `
     if (label.indexOf(q) >= 0) return 20;
     return 0;
   }
-
   function render() {
     var q = input.value.trim().toLowerCase();
     var u = universe || [];
-    var ranked = u
-      .map(function(c) { return { c: c, s: score(c, q) }; })
+    var ranked = u.map(function(c) { return { c: c, s: score(c, q) }; })
       .filter(function(x) { return q === '' || x.s > 0; })
       .sort(function(a, b) {
         if (b.s !== a.s) return b.s - a.s;
@@ -248,40 +197,35 @@ const CMDK_RUNTIME_SCRIPT = `
     if (highlight >= lastFiltered.length) highlight = Math.max(0, lastFiltered.length - 1);
 
     if (lastFiltered.length === 0) {
-      results.innerHTML = '<li class="px-4 py-8 text-center text-sm text-slate-500">' +
-        (q ? 'No tickers match “' + escapeHtml(q) + '”' : 'Loading universe…') +
-        '</li>';
+      results.innerHTML = '<li class="px-4 py-8 text-center text-sm muted">' +
+        (q ? 'No tickers match "' + escapeHtml(q) + '"' : 'Loading universe…') + '</li>';
       return;
     }
     results.innerHTML = lastFiltered.map(function(c, i) {
       var kindBadge = c.kind === 'etf'
-        ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-mono">ETF</span>'
-        : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 font-mono">STOCK</span>';
-      var hl = i === highlight ? 'bg-emerald-500/10' : '';
-      return '<li data-index="' + i + '" class="dd-cmdk-item ' + hl + ' px-4 py-2.5 cursor-pointer flex items-center gap-3 hover:bg-emerald-500/10 border-b border-slate-800/40 last:border-0">' +
-        '<span class="font-mono font-semibold text-slate-100 w-16 truncate">' + escapeHtml(c.ticker) + '</span>' +
+        ? '<span class="pill pill-cyan">ETF</span>'
+        : '<span class="pill pill-violet">STOCK</span>';
+      var hl = i === highlight ? 'is-highlighted' : '';
+      return '<li data-index="' + i + '" class="dd-cmdk-item ' + hl + '">' +
+        '<span class="font-mono font-semibold text-base mr-3 w-16 truncate">' + escapeHtml(c.ticker) + '</span>' +
         kindBadge +
-        '<span class="text-sm text-slate-300 truncate flex-1">' + escapeHtml(c.name) + '</span>' +
-        '<span class="text-[11px] text-slate-500 truncate hidden sm:inline">' + escapeHtml(c.categoryLabel || '') + '</span>' +
-        '<span class="num text-xs text-emerald-300">' + escapeHtml(fmtPctSafe(c.forwardYield)) + '</span>' +
+        '<span class="text-sm flex-1 truncate ml-3">' + escapeHtml(c.name) + '</span>' +
+        '<span class="text-[11px] muted truncate hidden sm:inline mr-3">' + escapeHtml(c.categoryLabel || '') + '</span>' +
+        '<span class="num text-xs accent-text">' + escapeHtml(fmtPctSafe(c.forwardYield)) + '</span>' +
         '</li>';
     }).join('');
   }
-
   function escapeHtml(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
-
   function pick(i) {
     var c = lastFiltered[i];
     if (!c) return;
     close();
     window.location.href = '/ticker/' + encodeURIComponent(c.ticker);
   }
-
-  // Event wiring
   if (trigger) trigger.addEventListener('click', open);
   document.addEventListener('keydown', function(e) {
     var meta = e.metaKey || e.ctrlKey;
@@ -315,34 +259,33 @@ const CMDK_RUNTIME_SCRIPT = `
 })();
 `;
 
-/**
- * Chart.js color palette resolver — used by every chart in every view.
- * Reads the currently resolved theme and returns matched colors.
- *
- * Chart instances are constructed once and live until the next page reload,
- * so reading at construction time is sufficient.
- */
 const CHART_THEME_HELPER = `
 window.__chartTheme = function() {
   var isLight = document.documentElement.getAttribute('data-resolved-theme') === 'light';
   if (isLight) {
     return {
       isLight: true,
-      text: '#475569',                                // axis labels
-      grid: 'rgba(15, 23, 36, 0.06)',                 // weak gridlines
-      gridStrong: 'rgba(15, 23, 36, 0.10)',           // stronger axis lines
+      text: '#475569',
+      grid: 'rgba(15, 23, 36, 0.06)',
+      gridStrong: 'rgba(15, 23, 36, 0.10)',
       tooltipBg: 'rgba(255, 255, 255, 0.97)',
-      tooltipText: '#0f172a',
-      tooltipBody: '#334155',
+      tooltipText: '#0a0d14',
+      tooltipBody: '#1f2937',
       tooltipBorder: 'rgba(5, 150, 105, 0.45)',
-      legend: '#334155',
-      // Series colors — slightly darker than dark-mode equivalents for AA
-      // contrast on white backgrounds
+      legend: '#1f2937',
       emerald: '#059669',
-      emeraldFill: 'rgba(5, 150, 105, 0.16)',
+      emeraldFill: 'rgba(5, 150, 105, 0.12)',
       emeraldDot: '#059669',
       cyan: '#0891b2',
-      cyanFill: 'rgba(8, 145, 178, 0.14)',
+      cyanFill: 'rgba(8, 145, 178, 0.10)',
+      amber: '#b45309',
+      amberFill: 'rgba(180, 83, 9, 0.12)',
+      rose: '#be123c',
+      roseFill: 'rgba(190, 18, 60, 0.10)',
+      violet: '#7c3aed',
+      lime: '#65a30d',
+      // 12-color sector palette (light)
+      sector: ['#059669','#0891b2','#7c3aed','#b45309','#be123c','#2563eb','#db2777','#65a30d','#c2410c','#475569','#ca8a04','#0d9488'],
     };
   }
   return {
@@ -351,227 +294,630 @@ window.__chartTheme = function() {
     grid: 'rgba(148, 163, 184, 0.05)',
     gridStrong: 'rgba(148, 163, 184, 0.10)',
     tooltipBg: 'rgba(15, 23, 36, 0.95)',
-    tooltipText: '#e2e8f0',
+    tooltipText: '#f1f5f9',
     tooltipBody: '#cbd5e1',
     tooltipBorder: 'rgba(52, 211, 153, 0.4)',
     legend: '#cbd5e1',
-    emerald: 'rgb(52, 211, 153)',
-    emeraldFill: 'rgba(52, 211, 153, 0.18)',
-    emeraldDot: 'rgb(52, 211, 153)',
-    cyan: 'rgb(34, 211, 238)',
+    emerald: '#34d399',
+    emeraldFill: 'rgba(52, 211, 153, 0.16)',
+    emeraldDot: '#34d399',
+    cyan: '#22d3ee',
     cyanFill: 'rgba(34, 211, 238, 0.10)',
+    amber: '#fbbf24',
+    amberFill: 'rgba(251, 191, 36, 0.14)',
+    rose: '#fb7185',
+    roseFill: 'rgba(251, 113, 133, 0.10)',
+    violet: '#a78bfa',
+    lime: '#a3e635',
+    // 12-color sector palette (dark)
+    sector: ['#34d399','#22d3ee','#a78bfa','#fbbf24','#fb7185','#60a5fa','#f472b6','#a3e635','#fb923c','#94a3b8','#facc15','#2dd4bf'],
   };
 };
 `;
 
 /**
- * The big one — light-mode overrides for the dark-first Tailwind classes
- * scattered across every view. Targets `[data-resolved-theme="light"]` so
- * the original dark look is the unmodified baseline.
- *
- * Strategy: remap the small set of slate utilities + glass surfaces +
- * accent colors actually used by the views. Anything not listed stays as
- * Tailwind originally generated it.
+ * Big stylesheet — the new design system.
+ * Variables drive both themes; components target the variables.
  */
-const LIGHT_OVERRIDES_CSS = `
+const DESIGN_CSS = `
 :root {
   color-scheme: dark;
+  /* dark palette */
+  --bg: #0a0d14;
+  --bg-elev: #0f131c;
+  --surface: #161b27;
+  --surface-2: #1d2433;
+  --rule: rgba(148, 163, 184, 0.10);
+  --rule-strong: rgba(148, 163, 184, 0.18);
+  --ink: #f1f5f9;
+  --ink-2: #e2e8f0;
+  --ink-3: #cbd5e1;
+  --ink-muted: #94a3b8;
+  --ink-faint: #64748b;
+  --accent: #34d399;
+  --accent-2: #fbbf24;
+  --positive: #4ade80;
+  --negative: #f87171;
+  --neutral: #94a3b8;
+  /* shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20), 0 0 0 1px rgba(148,163,184,0.06);
+  --shadow-md: 0 4px 16px -4px rgba(0,0,0,0.30), 0 0 0 1px rgba(148,163,184,0.08);
+  --shadow-glow: 0 8px 32px -12px rgba(52, 211, 153, 0.25);
 }
 :root[data-resolved-theme="light"] {
   color-scheme: light;
+  --bg: #fafaf6;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f5f4ee;
+  --rule: rgba(15, 23, 36, 0.08);
+  --rule-strong: rgba(15, 23, 36, 0.14);
+  --ink: #0a0d14;
+  --ink-2: #1f2937;
+  --ink-3: #334155;
+  --ink-muted: #475569;
+  --ink-faint: #64748b;
+  --accent: #059669;
+  --accent-2: #b45309;
+  --positive: #047857;
+  --negative: #be123c;
+  --neutral: #64748b;
+  --shadow-sm: 0 1px 2px rgba(15,23,36,0.04), 0 0 0 1px rgba(15,23,36,0.05);
+  --shadow-md: 0 1px 3px rgba(15,23,36,0.05), 0 8px 24px -10px rgba(15,23,36,0.08);
+  --shadow-glow: 0 8px 28px -10px rgba(5, 150, 105, 0.30);
 }
 
-/* === Body / background === */
+* { box-sizing: border-box; }
+html { background: var(--bg); }
 body {
   background:
-    radial-gradient(1200px 800px at 10% -10%, rgba(16,185,129,0.07), transparent),
-    radial-gradient(1000px 700px at 110% 0%, rgba(99,102,241,0.06), transparent),
-    #0b0f17;
+    radial-gradient(1400px 900px at 8% -10%, rgba(52,211,153,0.06), transparent 60%),
+    radial-gradient(1100px 800px at 120% 0%, rgba(251,191,36,0.04), transparent 55%),
+    var(--bg);
   min-height: 100vh;
+  color: var(--ink-2);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 [data-resolved-theme="light"] body {
   background:
-    radial-gradient(1200px 800px at 10% -10%, rgba(16,185,129,0.10), transparent),
-    radial-gradient(1000px 700px at 110% 0%, rgba(99,102,241,0.08), transparent),
-    #f6f7fb;
-  color: #0f172a;
+    radial-gradient(1400px 900px at 8% -10%, rgba(5,150,105,0.06), transparent 60%),
+    radial-gradient(1100px 800px at 120% 0%, rgba(180,83,9,0.04), transparent 55%),
+    var(--bg);
+  color: var(--ink-2);
 }
 
-/* === Glass surfaces === */
+/* === Type === */
+.display { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; font-weight: 600; letter-spacing: -0.015em; }
+.editorial { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; font-weight: 600; }
+.num, .mono, kbd { font-family: 'JetBrains Mono', ui-monospace, SF Mono, Menlo, monospace; font-feature-settings: 'tnum', 'zero'; font-variant-numeric: tabular-nums; }
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-feature-settings: 'cv11';
+}
+.muted { color: var(--ink-muted); }
+.faint { color: var(--ink-faint); }
+.ink { color: var(--ink); }
+.ink-2 { color: var(--ink-2); }
+.ink-3 { color: var(--ink-3); }
+.accent-text { color: var(--accent); }
+.accent-2-text { color: var(--accent-2); }
+.positive { color: var(--positive); }
+.negative { color: var(--negative); }
+
+/* === Surfaces === */
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.surface-2 {
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.elevated { box-shadow: var(--shadow-md); }
 .glass {
-  background: rgba(15, 23, 36, 0.6);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
 }
 .glass-strong {
-  background: rgba(15, 23, 36, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--rule-strong);
+  backdrop-filter: blur(8px);
 }
-[data-resolved-theme="light"] .glass {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(15, 23, 36, 0.06);
-  box-shadow: 0 1px 2px rgba(15, 23, 36, 0.04), 0 4px 16px -8px rgba(15, 23, 36, 0.06);
+[data-resolved-theme="dark"] .glass-strong { background: rgba(15, 19, 28, 0.85); }
+
+/* === Section header === */
+.section-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
 }
-[data-resolved-theme="light"] .glass-strong {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(15, 23, 36, 0.08);
-  box-shadow: 0 1px 3px rgba(15, 23, 36, 0.05), 0 8px 32px -12px rgba(15, 23, 36, 0.08);
+.section-h .label { font-size: 11px; }
+.section-h h2 {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: var(--ink);
+  letter-spacing: -0.01em;
 }
 
-/* === Numeric font-feature === */
-.num {
+/* === KPI tile === */
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi .label { display: block; margin-bottom: 6px; }
+.kpi .value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
+  font-size: 1.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.kpi .sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+.kpi.kpi-lg .value { font-size: 2.5rem; }
+
+/* === Quote hero === */
+.hero-quote {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: end;
+  padding: 24px 24px 18px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+.hero-quote .symbol {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 600;
+  font-size: 3rem;
+  color: var(--ink);
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.hero-quote .price {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  font-size: 2.75rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+  text-align: right;
+  letter-spacing: -0.02em;
 }
 
-/* === Sustainability score badge === */
-.score-badge {
+/* === Delta chip === */
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.10);
+  color: var(--neutral);
+}
+.delta-pos { background: rgba(74, 222, 128, 0.14); color: var(--positive); }
+.delta-neg { background: rgba(248, 113, 113, 0.14); color: var(--negative); }
+[data-resolved-theme="light"] .delta-pos { background: rgba(4, 120, 87, 0.10); color: var(--positive); }
+[data-resolved-theme="light"] .delta-neg { background: rgba(190, 18, 60, 0.10); color: var(--negative); }
+.delta-lg { font-size: 14px; padding: 4px 10px; }
+
+/* === Pills (badges) === */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pill-cyan   { background: rgba(34,211,238,0.12); color: #22d3ee; }
+.pill-violet { background: rgba(167,139,250,0.14); color: #a78bfa; }
+.pill-emerald{ background: rgba(52,211,153,0.14); color: var(--accent); }
+.pill-amber  { background: rgba(251,191,36,0.14); color: var(--accent-2); }
+.pill-rose   { background: rgba(248,113,113,0.12); color: var(--negative); }
+.pill-slate  { background: rgba(148,163,184,0.10); color: var(--ink-muted); }
+[data-resolved-theme="light"] .pill-cyan   { background: rgba(8,145,178,0.10); color: #0891b2; }
+[data-resolved-theme="light"] .pill-violet { background: rgba(124,58,237,0.10); color: #6d28d9; }
+[data-resolved-theme="light"] .pill-emerald{ background: rgba(5,150,105,0.10); color: var(--accent); }
+[data-resolved-theme="light"] .pill-amber  { background: rgba(180,83,9,0.10); color: var(--accent-2); }
+
+/* === Grade badge (A+/A/B/C/D/F) === */
+.grade {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 9999px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  border: 2px solid currentColor;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
 }
+.grade-A { background: rgba(74,222,128,0.16); color: var(--positive); border-color: rgba(74,222,128,0.30); }
+.grade-B { background: rgba(163,230,53,0.16); color: #a3e635; border-color: rgba(163,230,53,0.30); }
+.grade-C { background: rgba(251,191,36,0.16); color: var(--accent-2); border-color: rgba(251,191,36,0.30); }
+.grade-D { background: rgba(251,146,60,0.16); color: #fb923c; border-color: rgba(251,146,60,0.30); }
+.grade-F { background: rgba(248,113,113,0.16); color: var(--negative); border-color: rgba(248,113,113,0.30); }
+[data-resolved-theme="light"] .grade-A { color: var(--positive); background: rgba(4,120,87,0.10); border-color: rgba(4,120,87,0.30); }
+[data-resolved-theme="light"] .grade-B { color: #4d7c0f; background: rgba(101,163,13,0.10); border-color: rgba(101,163,13,0.30); }
+[data-resolved-theme="light"] .grade-C { color: var(--accent-2); background: rgba(180,83,9,0.10); border-color: rgba(180,83,9,0.30); }
+[data-resolved-theme="light"] .grade-D { color: #c2410c; background: rgba(194,65,12,0.10); border-color: rgba(194,65,12,0.30); }
+[data-resolved-theme="light"] .grade-F { color: var(--negative); background: rgba(190,18,60,0.10); border-color: rgba(190,18,60,0.30); }
 
-/* === Ticker card hover === */
+.grade-lg { width: 56px; height: 56px; font-size: 26px; border-radius: 12px; }
+
+/* === Data tables === */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table thead th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  white-space: nowrap;
+}
+.data-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover td { background: rgba(148,163,184,0.05); }
+[data-resolved-theme="light"] .data-table tbody tr:hover td { background: rgba(15,23,36,0.025); }
+.data-table .num-cell { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.data-table .ticker-cell { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); }
+.data-table tbody tr:last-child td { border-bottom: 0; }
+
+/* === Buttons === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: all 120ms ease;
+  text-decoration: none;
+}
+.btn:hover { border-color: var(--rule-strong); color: var(--ink); }
+.btn-accent {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+[data-resolved-theme="light"] .btn-accent { color: white; }
+.btn-accent:hover { filter: brightness(1.06); }
+.btn-ghost { background: transparent; }
+
+/* === Filter chip === */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+.chip:hover { color: var(--ink); border-color: var(--rule-strong); }
+.chip.is-active {
+  background: rgba(52,211,153,0.14);
+  color: var(--accent);
+  border-color: rgba(52,211,153,0.40);
+}
+[data-resolved-theme="light"] .chip.is-active {
+  background: rgba(5,150,105,0.10);
+  color: var(--accent);
+  border-color: rgba(5,150,105,0.45);
+}
+.chip .count { color: var(--ink-faint); margin-left: 4px; font-feature-settings: 'tnum'; }
+
+/* === Inputs === */
+.input, select.input {
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 100ms ease;
+  font-family: 'Inter', sans-serif;
+}
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--ink-faint); }
+
+/* === Ticker card grid === */
 .ticker-card {
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px;
+  text-decoration: none;
+  color: var(--ink-2);
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 .ticker-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px -12px rgba(16, 185, 129, 0.25);
-  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: var(--shadow-glow);
+  border-color: rgba(52, 211, 153, 0.40);
 }
-[data-resolved-theme="light"] .ticker-card:hover {
-  box-shadow: 0 8px 28px -10px rgba(5, 150, 105, 0.30);
-  border-color: rgba(5, 150, 105, 0.45);
+[data-resolved-theme="light"] .ticker-card:hover { border-color: rgba(5, 150, 105, 0.45); }
+
+/* sparkline canvas wrappers */
+.sparkline { height: 28px; width: 100%; display: block; }
+.sparkline-md { height: 56px; }
+.sparkline-lg { height: 80px; }
+
+/* mini bar */
+.bar-track {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
 }
 
-.sparkline { height: 32px; width: 100%; }
+/* === Header === */
+.app-header {
+  position: sticky; top: 0; z-index: 30;
+}
+.app-header .brand-mark {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center;
+  color: #0a0d14;
+  font-weight: 700;
+}
+.app-header nav a {
+  display: inline-flex; align-items: center;
+  padding: 18px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  border-bottom: 2px solid transparent;
+  text-decoration: none;
+  transition: color 100ms ease, border-color 100ms ease;
+}
+.app-header nav a:hover { color: var(--ink); }
+.app-header nav a.is-active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
 
-/* === Scrollbar === */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: rgba(15,23,36,0.4); }
-::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.4); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.6); }
-[data-resolved-theme="light"] ::-webkit-scrollbar-track { background: rgba(15, 23, 36, 0.04); }
-[data-resolved-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(15, 23, 36, 0.18); }
-[data-resolved-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 36, 0.28); }
+.search-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  padding: 7px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  min-width: 220px;
+}
+.search-trigger:hover { color: var(--ink); border-color: var(--rule-strong); }
+.search-trigger kbd {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
 
-/* === LIGHT MODE TAILWIND-CLASS REMAPS ===
- * Every slate text / bg / border class actually used by the views,
- * plus accent text colors that need a darker shade on white for
- * AA contrast. Only need !important on the simple class overrides
- * because Tailwind's CDN puts its rules at low specificity already.
- */
-[data-resolved-theme="light"] .text-slate-50,
-[data-resolved-theme="light"] .text-slate-100,
-[data-resolved-theme="light"] .text-slate-200 { color: #0f172a !important; }
-[data-resolved-theme="light"] .text-slate-300 { color: #1e293b !important; }
-[data-resolved-theme="light"] .text-slate-400 { color: #475569 !important; }
-[data-resolved-theme="light"] .text-slate-500 { color: #64748b !important; }
-
-[data-resolved-theme="light"] .bg-slate-800 { background-color: #e2e8f0 !important; }
-[data-resolved-theme="light"] .bg-slate-900 { background-color: #ffffff !important; }
-[data-resolved-theme="light"] .bg-slate-950 { background-color: #f6f7fb !important; }
-[data-resolved-theme="light"] .bg-slate-800\\/30 { background-color: rgba(15, 23, 36, 0.04) !important; }
-[data-resolved-theme="light"] .bg-slate-800\\/60 { background-color: rgba(15, 23, 36, 0.06) !important; }
-[data-resolved-theme="light"] .bg-slate-900\\/40 { background-color: #ffffff !important; }
-[data-resolved-theme="light"] .bg-slate-900\\/60 { background-color: #ffffff !important; }
-[data-resolved-theme="light"] .hover\\:bg-slate-800:hover { background-color: #cbd5e1 !important; }
-[data-resolved-theme="light"] .hover\\:bg-slate-800\\/30:hover { background-color: rgba(15, 23, 36, 0.05) !important; }
-
-[data-resolved-theme="light"] .border-slate-700 { border-color: #cbd5e1 !important; }
-[data-resolved-theme="light"] .border-slate-800 { border-color: #e2e8f0 !important; }
-[data-resolved-theme="light"] .border-slate-800\\/40 { border-color: rgba(15, 23, 36, 0.08) !important; }
-[data-resolved-theme="light"] .border-slate-800\\/60 { border-color: rgba(15, 23, 36, 0.10) !important; }
-[data-resolved-theme="light"] .border-slate-800\\/70 { border-color: rgba(15, 23, 36, 0.12) !important; }
-
-/* Accent text — darken for AA contrast on white */
-[data-resolved-theme="light"] .text-emerald-300,
-[data-resolved-theme="light"] .text-emerald-400 { color: #059669 !important; }
-[data-resolved-theme="light"] .text-cyan-300,
-[data-resolved-theme="light"] .text-cyan-400 { color: #0891b2 !important; }
-[data-resolved-theme="light"] .text-amber-300,
-[data-resolved-theme="light"] .text-amber-400 { color: #b45309 !important; }
-[data-resolved-theme="light"] .text-amber-300\\/90 { color: rgba(180, 83, 9, 0.92) !important; }
-[data-resolved-theme="light"] .text-rose-400 { color: #e11d48 !important; }
-[data-resolved-theme="light"] .text-orange-400 { color: #c2410c !important; }
-[data-resolved-theme="light"] .text-lime-400 { color: #4d7c0f !important; }
-[data-resolved-theme="light"] .text-violet-300 { color: #6d28d9 !important; }
-
-/* Accent backgrounds (filter pills, badges) */
-[data-resolved-theme="light"] .bg-emerald-500\\/20 { background-color: rgba(5, 150, 105, 0.15) !important; }
-[data-resolved-theme="light"] .bg-emerald-500\\/30 { background-color: rgba(5, 150, 105, 0.22) !important; }
-[data-resolved-theme="light"] .bg-emerald-500\\/5 { background-color: rgba(5, 150, 105, 0.04) !important; }
-[data-resolved-theme="light"] .bg-cyan-500\\/15 { background-color: rgba(8, 145, 178, 0.14) !important; }
-[data-resolved-theme="light"] .bg-cyan-500\\/5 { background-color: rgba(8, 145, 178, 0.04) !important; }
-[data-resolved-theme="light"] .bg-violet-500\\/15 { background-color: rgba(109, 40, 217, 0.13) !important; }
-[data-resolved-theme="light"] .border-emerald-500\\/40 { border-color: rgba(5, 150, 105, 0.45) !important; }
-[data-resolved-theme="light"] .border-emerald-500\\/30 { border-color: rgba(5, 150, 105, 0.35) !important; }
-[data-resolved-theme="light"] .border-cyan-500\\/30 { border-color: rgba(8, 145, 178, 0.35) !important; }
-[data-resolved-theme="light"] .focus\\:border-emerald-500:focus { border-color: #059669 !important; }
-[data-resolved-theme="light"] .hover\\:border-emerald-500\\/40:hover { border-color: rgba(5, 150, 105, 0.45) !important; }
-[data-resolved-theme="light"] .hover\\:border-emerald-500\\/60:hover { border-color: rgba(5, 150, 105, 0.6) !important; }
-[data-resolved-theme="light"] .hover\\:text-emerald-400:hover { color: #047857 !important; }
-[data-resolved-theme="light"] .hover\\:text-rose-400:hover { color: #be123c !important; }
-
-/* Placeholder text */
-[data-resolved-theme="light"] .placeholder\\:text-slate-500::placeholder { color: #94a3b8 !important; }
-
-/* Active nav link border */
-[data-resolved-theme="light"] .border-emerald-400 { border-color: #059669 !important; }
-[data-resolved-theme="light"] .hover\\:text-slate-100:hover { color: #0f172a !important; }
-[data-resolved-theme="light"] .hover\\:border-slate-600:hover { border-color: #cbd5e1 !important; }
-
-/* === Theme toggle (segmented control) === */
+/* Theme toggle */
 .theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
+  display: inline-flex; align-items: center; gap: 2px;
   padding: 3px;
-  border-radius: 9999px;
-  background: rgba(15, 23, 36, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.10);
-}
-[data-resolved-theme="light"] .theme-toggle {
-  background: rgba(15, 23, 36, 0.04);
-  border: 1px solid rgba(15, 23, 36, 0.08);
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
 }
 .theme-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9999px;
-  color: #64748b;
-  background: transparent;
-  border: 0;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  color: var(--ink-faint);
+  background: transparent; border: 0;
   cursor: pointer;
-  transition: color 0.12s ease, background-color 0.12s ease;
+  transition: color 100ms ease, background-color 100ms ease;
 }
-.theme-btn:hover { color: #cbd5e1; }
-[data-resolved-theme="light"] .theme-btn:hover { color: #1e293b; }
-.theme-btn.theme-btn-active {
-  color: #0b0f17;
-  background: #34d399;
+.theme-btn:hover { color: var(--ink-2); }
+.theme-btn.theme-btn-active { color: var(--bg); background: var(--accent); }
+[data-resolved-theme="light"] .theme-btn.theme-btn-active { color: white; background: var(--accent); }
+.theme-btn svg { width: 13px; height: 13px; }
+
+/* Cmd+K palette */
+.dd-cmdk-backdrop { background: rgba(10, 13, 20, 0.72); backdrop-filter: blur(4px); }
+[data-resolved-theme="light"] .dd-cmdk-backdrop { background: rgba(15, 23, 36, 0.30); }
+.dd-cmdk-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-strong);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.45);
 }
-[data-resolved-theme="light"] .theme-btn.theme-btn-active {
-  color: #ffffff;
-  background: #059669;
+.dd-cmdk-item {
+  display: flex; align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
 }
-.theme-btn svg { width: 14px; height: 14px; }
+.dd-cmdk-item:last-child { border-bottom: 0; }
+.dd-cmdk-item.is-highlighted, .dd-cmdk-item:hover {
+  background: rgba(52,211,153,0.08);
+  color: var(--ink);
+}
+[data-resolved-theme="light"] .dd-cmdk-item.is-highlighted,
+[data-resolved-theme="light"] .dd-cmdk-item:hover { background: rgba(5,150,105,0.06); }
+
+/* Footer */
+.app-footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 4rem;
+  padding: 32px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--rule-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); border: 2px solid transparent; background-clip: padding-box; }
+
+/* Anchor ribbon (ticker page sub-nav) */
+.anchor-ribbon {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.anchor-ribbon a {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 100ms ease, border-color 100ms ease;
+}
+.anchor-ribbon a:hover { color: var(--ink); }
+.anchor-ribbon a.is-active { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* Mini visualisations */
+.mini-bars {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 2px;
+  align-items: end;
+  height: 32px;
+}
+.mini-bars .bar {
+  background: rgba(52,211,153,0.55);
+  border-radius: 1px;
+  min-height: 2px;
+}
+[data-resolved-theme="light"] .mini-bars .bar { background: rgba(5,150,105,0.55); }
+
+/* 52-week price meter */
+.range-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgba(248,113,113,0.5), rgba(251,191,36,0.5), rgba(74,222,128,0.55));
+}
+.range-marker {
+  position: absolute;
+  top: -3px;
+  width: 12px; height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--rule-strong);
+}
+
+/* News card */
+.news-item {
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  display: block;
+  text-decoration: none;
+  color: var(--ink-2);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.news-item:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.news-item .meta { font-size: 11px; color: var(--ink-muted); }
+.news-item .meta .dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle; background: var(--ink-faint);
+}
+.news-item .meta .dot.fresh { background: var(--negative); }
+.news-item .meta .dot.recent { background: var(--accent-2); }
+
+/* Anchor offset for sticky header */
+.anchor-target { scroll-margin-top: 80px; }
 `;
 
 function renderThemeToggle(): string {
-  // Three options: light / light-dark (auto) / dark
   return `
   <div class="theme-toggle" role="group" aria-label="Theme">
     <button type="button" class="theme-btn" data-theme-set="light" aria-pressed="false" title="Light theme">
@@ -598,10 +944,7 @@ function renderThemeToggle(): string {
 export function renderLayout(opts: LayoutOpts): string {
   const navHtml = NAV_LINKS.map((link) => {
     const isActive = link.key === opts.active;
-    const cls = isActive
-      ? 'text-emerald-400 border-emerald-400'
-      : 'text-slate-400 border-transparent hover:text-slate-100 hover:border-slate-600';
-    return `<a href="${link.href}" class="px-4 py-2 border-b-2 ${cls} transition-colors text-sm font-medium">${link.label}</a>`;
+    return `<a href="${link.href}" class="${isActive ? 'is-active' : ''}">${link.label}</a>`;
   }).join('');
 
   return `<!DOCTYPE html>
@@ -619,6 +962,7 @@ export function renderLayout(opts: LayoutOpts): string {
       extend: {
         fontFamily: {
           sans: ['Inter', 'system-ui', 'sans-serif'],
+          serif: ['Source Serif 4', 'Source Serif Pro', 'Georgia', 'serif'],
           mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
         },
       },
@@ -627,74 +971,77 @@ export function renderLayout(opts: LayoutOpts): string {
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>${CHART_THEME_HELPER}</script>
-<style>${LIGHT_OVERRIDES_CSS}</style>
+<style>${DESIGN_CSS}</style>
 ${opts.head ?? ''}
 </head>
-<body class="text-slate-100 font-sans antialiased">
-  <header class="glass-strong sticky top-0 z-30 border-b border-slate-800/60">
-    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-8">
-      <a href="/" class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5 text-slate-900">
+<body>
+  <header class="app-header glass-strong">
+    <div class="max-w-[1280px] mx-auto px-6 flex items-center gap-6">
+      <a href="/" class="flex items-center gap-2 py-3" style="text-decoration:none;color:inherit;">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" class="w-4 h-4">
             <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
           </svg>
         </div>
-        <span class="font-bold tracking-tight text-lg">dividend-dash</span>
-        <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">v0.4</span>
+        <div class="flex items-baseline gap-2">
+          <span class="display text-[18px] ink">dividend-dash</span>
+          <span class="text-[10px] muted font-mono">v0.5</span>
+        </div>
       </a>
-      <nav class="flex items-center gap-0">${navHtml}</nav>
+      <nav class="flex items-center gap-0 ml-2">${navHtml}</nav>
       <div class="flex-1"></div>
-      <button
-        type="button"
-        id="dd-cmdk-trigger"
-        class="flex items-center gap-2 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
-        aria-label="Open command palette"
-      >
+      ${
+        opts.asOf
+          ? `<span class="text-[11px] muted hidden md:inline mr-1">as of <span class="num">${escapeHtml(opts.asOf)}</span></span>`
+          : ''
+      }
+      <button type="button" id="dd-cmdk-trigger" class="search-trigger" aria-label="Open command palette">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 opacity-70"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <span class="hidden md:inline">Search ticker</span>
-        <kbd class="hidden md:inline ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800/70 text-slate-400 border border-slate-700">⌘K</kbd>
+        <span class="hidden md:inline flex-1 text-left">Search ticker, name, sector…</span>
+        <kbd>⌘K</kbd>
       </button>
       ${renderThemeToggle()}
     </div>
   </header>
 
   <!-- Command palette -->
-  <div id="dd-cmdk" class="dd-cmdk hidden fixed inset-0 z-50 items-start justify-center pt-24 px-4" role="dialog" aria-modal="true" aria-label="Ticker search">
-    <div class="dd-cmdk-backdrop absolute inset-0 bg-slate-950/70 backdrop-blur-sm" data-cmdk-close></div>
-    <div class="relative w-full max-w-xl rounded-2xl glass-strong border border-slate-700/60 shadow-2xl overflow-hidden">
-      <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/60">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5 text-slate-500"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+  <div id="dd-cmdk" class="hidden fixed inset-0 z-50 items-start justify-center pt-24 px-4" role="dialog" aria-modal="true" aria-label="Ticker search">
+    <div class="dd-cmdk-backdrop absolute inset-0" data-cmdk-close></div>
+    <div class="dd-cmdk-panel relative w-full max-w-xl overflow-hidden">
+      <div class="flex items-center gap-3 px-4 py-3" style="border-bottom:1px solid var(--rule);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5 muted"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         <input
           id="dd-cmdk-input"
           type="text"
           placeholder="Search by ticker or name (try SCHD, JNJ, dividend kings)…"
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          class="flex-1 bg-transparent text-base text-slate-100 placeholder:text-slate-500 focus:outline-none"
+          autocomplete="off" autocapitalize="off" spellcheck="false"
+          class="flex-1 bg-transparent text-base ink focus:outline-none"
+          style="color:var(--ink);"
         >
-        <kbd class="text-[10px] font-mono text-slate-500 px-1.5 py-0.5 rounded bg-slate-800/60 border border-slate-700">esc</kbd>
+        <kbd class="text-[10px] muted px-1.5 py-0.5 rounded font-mono" style="background:var(--surface-2);border:1px solid var(--rule);">esc</kbd>
       </div>
       <ul id="dd-cmdk-results" class="max-h-[60vh] overflow-y-auto"></ul>
-      <div class="px-4 py-2 border-t border-slate-800/60 text-[11px] text-slate-500 flex items-center justify-between">
-        <span><kbd class="font-mono text-slate-400">↑↓</kbd> navigate · <kbd class="font-mono text-slate-400">↵</kbd> open</span>
-        <span class="num">v0.4</span>
+      <div class="px-4 py-2 text-[11px] muted flex items-center justify-between" style="border-top:1px solid var(--rule);">
+        <span><kbd class="font-mono">↑↓</kbd> navigate · <kbd class="font-mono">↵</kbd> open</span>
+        <span class="num">v0.5</span>
       </div>
     </div>
   </div>
 
-  <main class="max-w-7xl mx-auto px-6 py-8">
+  <main class="max-w-[1280px] mx-auto px-6 py-8">
     ${opts.body}
   </main>
 
-  <footer class="max-w-7xl mx-auto px-6 py-12 text-center text-slate-500 text-xs border-t border-slate-800/40 mt-12">
-    <p>dividend-dash · personal dividend research · not financial advice</p>
-    <p class="mt-1">Data: Yahoo Finance &amp; SEC EDGAR · refreshed manually via <code class="text-slate-400">bun run seed-universe</code></p>
+  <footer class="app-footer">
+    <div class="max-w-[1280px] mx-auto px-6">
+      <p>dividend-dash · personal dividend research · not financial advice</p>
+      <p class="mt-1">Data: Yahoo Finance &amp; SEC EDGAR · refresh via <code class="num">bun run seed-universe</code></p>
+    </div>
   </footer>
 
   ${opts.footerScripts ?? ''}
@@ -704,7 +1051,7 @@ ${opts.head ?? ''}
 </html>`;
 }
 
-// === Shared format helpers used by views ===
+// === Shared format helpers ===
 
 export function fmtUsd(cents: number | null, opts: { decimals?: number } = {}): string {
   if (cents === null) return '—';
@@ -721,25 +1068,61 @@ export function fmtNum(n: number | null, decimals = 2): string {
   return n.toFixed(decimals);
 }
 
+export function fmtCompactUsd(n: number | null, decimals = 2): string {
+  if (n === null || Number.isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `$${(n / 1e12).toFixed(decimals)}T`;
+  if (abs >= 1e9) return `$${(n / 1e9).toFixed(decimals)}B`;
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(decimals)}M`;
+  if (abs >= 1e3) return `$${(n / 1e3).toFixed(decimals)}K`;
+  return `$${n.toFixed(decimals)}`;
+}
+
 export function fmtDate(d: string | null): string {
   if (!d) return '—';
   return d;
 }
 
+/** 0-100 score → letter grade (A+/A/B/C/D/F). */
+export function scoreToGrade(score: number): { letter: string; cls: string } {
+  if (score >= 90) return { letter: 'A+', cls: 'grade-A' };
+  if (score >= 80) return { letter: 'A', cls: 'grade-A' };
+  if (score >= 70) return { letter: 'B', cls: 'grade-B' };
+  if (score >= 55) return { letter: 'C', cls: 'grade-C' };
+  if (score >= 40) return { letter: 'D', cls: 'grade-D' };
+  return { letter: 'F', cls: 'grade-F' };
+}
+
 /** Color a sustainability score 0–100. */
 export function scoreColor(score: number): string {
-  if (score >= 80) return 'text-emerald-400';
-  if (score >= 60) return 'text-lime-400';
-  if (score >= 40) return 'text-amber-400';
-  if (score >= 20) return 'text-orange-400';
-  return 'text-rose-400';
+  if (score >= 80) return 'positive';
+  if (score >= 60) return 'accent-text';
+  if (score >= 40) return 'accent-2-text';
+  if (score >= 20) return 'accent-2-text';
+  return 'negative';
 }
 
 /** Color a yield (higher = warmer). */
 export function yieldColor(y: number | null): string {
-  if (y === null) return 'text-slate-400';
-  if (y >= 0.08) return 'text-rose-400';
-  if (y >= 0.05) return 'text-amber-400';
-  if (y >= 0.03) return 'text-emerald-400';
-  return 'text-slate-300';
+  if (y === null) return 'muted';
+  if (y >= 0.08) return 'negative';
+  if (y >= 0.05) return 'accent-2-text';
+  if (y >= 0.03) return 'positive';
+  return 'ink-2';
+}
+
+/** Render a delta chip from a numeric change (in same units). */
+export function renderDelta(
+  value: number | null,
+  opts: { suffix?: string; decimals?: number } = {},
+): string {
+  if (value === null || Number.isNaN(value)) {
+    return `<span class="delta">—</span>`;
+  }
+  const suffix = opts.suffix ?? '';
+  const decimals = opts.decimals ?? 2;
+  const cls = value > 0 ? 'delta-pos' : value < 0 ? 'delta-neg' : '';
+  const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '◆';
+  const abs = Math.abs(value).toFixed(decimals);
+  return `<span class="delta ${cls}">${arrow} ${abs}${suffix}</span>`;
 }

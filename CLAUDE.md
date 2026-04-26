@@ -62,11 +62,26 @@ docs/           # plan.md, decisions.md, ARCHITECTURE.md
 
 ## Things to NOT do
 
-- Don't add a web UI. The digest is the UI.
 - Don't add user accounts, multi-tenancy, or auth. Single-user tool.
-- Don't pull in heavy charting libs server-side. If a chart is needed in the digest, render to PNG with a minimal lib (e.g. `chart.js-node-canvas` only if necessary) — but prefer text/markdown.
-- Don't add real-time price streaming.
+- Don't pull in heavy charting libs server-side. The web UI uses Chart.js
+  client-side via CDN; the digest stays text/markdown.
+- Don't add real-time price streaming. EOD via `bun run refresh-quotes`.
 - Don't store API keys in code. `.env` only. Validate presence at startup.
+
+## Web UI conventions (v0.5+)
+
+There IS a web UI now (`bun run web` → http://localhost:5173). It's the
+primary surface. The weekly digest is the secondary surface.
+
+- All design tokens, fonts, and component CSS live in
+  `src/web/views/layout.ts`. Read **DESIGN.md** before touching the UI.
+- Use the existing utility classes (`.kpi`, `.delta`, `.pill`, `.grade-X`,
+  `.section-h`, `.data-table`, `.ticker-card`). If you need a new
+  component, add it to `layout.ts` so the system stays coherent — do not
+  one-off it inside a view.
+- All numeric values use `.num` (tabular nums on, JetBrains Mono).
+- Charts read colors from `window.__chartTheme()` so they adapt to dark /
+  light. Don't hardcode `#34d399` etc. inside a view.
 
 ## Autonomous mode notes
 

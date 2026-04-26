@@ -618,6 +618,205 @@ export function buildCalendar(daysAhead = 90): CalendarEntry[] {
   });
 }
 
+// === Universe analytics (v0.5 dashboard) ===
+
+export interface UniverseStats {
+  /** Universe size & breakdown */
+  total: number;
+  etfCount: number;
+  stockCount: number;
+
+  /** Yield distribution: histogram bins (each bin: { range: '0-2%', count: N }) */
+  yieldHistogram: { label: string; min: number; max: number; count: number }[];
+
+  /** Sector exposure (counts of tickers in each sector across universe). */
+  sectorMix: { sector: string; count: number; pct: number }[];
+
+  /** Frequency mix: monthly / quarterly / etc */
+  frequencyMix: { frequency: string; count: number; pct: number }[];
+
+  /** Aggregate metrics */
+  avgForwardYield: number;
+  avgSustainability: number;
+  avgPayoutRatio: number;
+  totalDividendEvents: number;
+}
+
+const YIELD_BINS: { label: string; min: number; max: number }[] = [
+  { label: '0-2%', min: 0, max: 0.02 },
+  { label: '2-3%', min: 0.02, max: 0.03 },
+  { label: '3-4%', min: 0.03, max: 0.04 },
+  { label: '4-5%', min: 0.04, max: 0.05 },
+  { label: '5-6%', min: 0.05, max: 0.06 },
+  { label: '6-8%', min: 0.06, max: 0.08 },
+  { label: '8%+', min: 0.08, max: Number.POSITIVE_INFINITY },
+];
+
+export function buildUniverseStats(cards: TickerCard[]): UniverseStats {
+  const total = cards.length;
+  const etfCount = cards.filter((c) => c.kind === 'etf').length;
+  const stockCount = total - etfCount;
+
+  // Yield histogram
+  const yieldHistogram = YIELD_BINS.map((b) => ({
+    ...b,
+    count: cards.filter(
+      (c) => c.forwardYield !== null && c.forwardYield >= b.min && c.forwardYield < b.max,
+    ).length,
+  }));
+
+  // Sector mix — pull from quote_snapshot.sector when present, else
+  // fall back to the universe categoryLabel to keep the chart populated.
+  const sectorMap = new Map<string, number>();
+  for (const c of cards) {
+    const snap = getLatestQuoteSnapshot(c.ticker);
+    const sector =
+      snap?.sector && snap.sector.trim() !== ''
+        ? snap.sector
+        : c.kind === 'etf'
+          ? `${c.categoryLabel}`
+          : c.categoryLabel;
+    sectorMap.set(sector, (sectorMap.get(sector) ?? 0) + 1);
+  }
+  const sectorEntries = Array.from(sectorMap.entries()).sort((a, b) => b[1] - a[1]);
+  const sectorMix = sectorEntries.map(([sector, count]) => ({
+    sector,
+    count,
+    pct: count / total,
+  }));
+
+  // Frequency mix
+  const freqMap = new Map<string, number>();
+  for (const c of cards) {
+    freqMap.set(c.frequency, (freqMap.get(c.frequency) ?? 0) + 1);
+  }
+  const freqEntries = Array.from(freqMap.entries()).sort((a, b) => b[1] - a[1]);
+  const frequencyMix = freqEntries.map(([frequency, count]) => ({
+    frequency,
+    count,
+    pct: count / total,
+  }));
+
+  // Aggregates
+  const yields = cards.map((c) => c.forwardYield).filter((y): y is number => y !== null && y > 0);
+  const avgForwardYield = yields.length > 0 ? yields.reduce((a, b) => a + b, 0) / yields.length : 0;
+  const sustScores = cards.map((c) => c.sustainability.total);
+  const avgSustainability =
+    sustScores.length > 0 ? sustScores.reduce((a, b) => a + b, 0) / sustScores.length : 0;
+  const payoutRatios = cards
+    .map((c) => c.payoutRatio)
+    .filter((p): p is number => p !== null && p > 0 && p < 5);
+  const avgPayoutRatio =
+    payoutRatios.length > 0 ? payoutRatios.reduce((a, b) => a + b, 0) / payoutRatios.length : 0;
+
+  const totalDividendEvents = cards.reduce((acc, c) => acc + getDividendEvents(c.ticker).length, 0);
+
+  return {
+    total,
+    etfCount,
+    stockCount,
+    yieldHistogram,
+    sectorMix,
+    frequencyMix,
+    avgForwardYield,
+    avgSustainability,
+    avgPayoutRatio,
+    totalDividendEvents,
+  };
+}
+
+/** Income outlook: bucket upcoming payments into 30/60/90 day windows. */
+export interface IncomeOutlook {
+  next30: { count: number; estPerShare: number };
+  next60: { count: number; estPerShare: number };
+  next90: { count: number; estPerShare: number };
+  /** Top upcoming payments by amount, soonest first. */
+  topUpcoming: CalendarEntry[];
+  /** Per-week buckets for next 13 weeks (0..12). */
+  weeklyBuckets: { weekIndex: number; count: number; estPerShare: number }[];
+}
+
+export function buildIncomeOutlook(): IncomeOutlook {
+  return memo('income-outlook', () => {
+    const upcoming = buildCalendar(90);
+
+    let n30 = 0;
+    let n60 = 0;
+    let n90 = 0;
+    let s30 = 0;
+    let s60 = 0;
+    let s90 = 0;
+    for (const e of upcoming) {
+      if (e.daysUntil <= 30) {
+        n30++;
+        s30 += e.amount;
+      }
+      if (e.daysUntil <= 60) {
+        n60++;
+        s60 += e.amount;
+      }
+      n90++;
+      s90 += e.amount;
+    }
+
+    // Per-week buckets (13 weeks)
+    const weeklyBuckets = Array.from({ length: 13 }, (_, i) => ({
+      weekIndex: i,
+      count: 0,
+      estPerShare: 0,
+    }));
+    for (const e of upcoming) {
+      const wk = Math.min(12, Math.floor(e.daysUntil / 7));
+      const bucket = weeklyBuckets[wk]!;
+      bucket.count++;
+      bucket.estPerShare += e.amount;
+    }
+
+    // Top upcoming by amount
+    const topUpcoming = [...upcoming].sort((a, b) => b.amount - a.amount).slice(0, 6);
+
+    return {
+      next30: { count: n30, estPerShare: s30 },
+      next60: { count: n60, estPerShare: s60 },
+      next90: { count: n90, estPerShare: s90 },
+      topUpcoming,
+      weeklyBuckets,
+    };
+  });
+}
+
+/** Leaderboards: top by various metrics. */
+export interface Leaderboards {
+  topYield: TickerCard[];
+  topGrowth: TickerCard[]; // by 5y CAGR
+  topStreak: TickerCard[]; // by growth streak
+  topSafety: TickerCard[]; // by sustainability
+}
+
+export function buildLeaderboards(cards: TickerCard[], n = 5): Leaderboards {
+  const byYield = [...cards]
+    .filter((c) => c.forwardYield !== null && c.forwardYield > 0)
+    .sort((a, b) => (b.forwardYield ?? 0) - (a.forwardYield ?? 0))
+    .slice(0, n);
+  const byGrowth = [...cards]
+    .filter((c) => c.cagr5y !== null)
+    .sort((a, b) => (b.cagr5y ?? Number.NEGATIVE_INFINITY) - (a.cagr5y ?? Number.NEGATIVE_INFINITY))
+    .slice(0, n);
+  const byStreak = [...cards]
+    .filter((c) => c.kind === 'stock' && c.growthStreak > 0)
+    .sort((a, b) => b.growthStreak - a.growthStreak)
+    .slice(0, n);
+  const bySafety = [...cards]
+    .sort((a, b) => b.sustainability.total - a.sustainability.total)
+    .slice(0, n);
+  return {
+    topYield: byYield,
+    topGrowth: byGrowth,
+    topStreak: byStreak,
+    topSafety: bySafety,
+  };
+}
+
 // === Yield-on-cost helper for charts ===
 
 export function buildYocSeries(ticker: string, costBasisPerShare: number): YocPoint[] {
