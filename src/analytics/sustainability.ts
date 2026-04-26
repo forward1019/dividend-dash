@@ -22,6 +22,17 @@ export interface SustainabilityInputs {
   growthStreakYears: number;
   /** Total debt / equity; null if unknown. */
   debtToEquity: number | null;
+  /**
+   * Issuer kind. REITs and BDCs report GAAP earnings depressed by D&A
+   * (REITs) or one-time investment-loss accruals (BDCs), so a payout
+   * ratio computed against GAAP EPS is structurally misleading. When
+   * `securityKind` is 'reit' or 'bdc', the GAAP payout component is
+   * disabled and its weight is shifted onto FCF cover, which is a
+   * cleaner proxy for distributable cash. ETFs pass-through dividends
+   * and have no payout ratio at all — same treatment.
+   * Default 'stock' preserves legacy behaviour.
+   */
+  securityKind?: 'stock' | 'etf' | 'reit' | 'bdc';
 }
 
 export interface SustainabilityScore {
@@ -120,19 +131,40 @@ export function scoreSustainability(
   inputs: SustainabilityInputs,
   weights: ScoreWeights = DEFAULT_WEIGHTS,
 ): SustainabilityScore {
-  const payoutScore = scorePayoutRatio(inputs.payoutRatio);
+  const kind = inputs.securityKind ?? 'stock';
+  // REITs / BDCs / ETFs: GAAP payout ratio is meaningless. Disable the
+  // payout component and reweight onto FCF cover (the closest free
+  // proxy for distributable cash without pulling AFFO/NII from EDGAR).
+  const disablePayout = kind === 'reit' || kind === 'bdc' || kind === 'etf';
+  const effectiveWeights: ScoreWeights = disablePayout
+    ? {
+        payout: 0,
+        fcfCover: weights.fcfCover + weights.payout,
+        growthStreak: weights.growthStreak,
+        debtEquity: weights.debtEquity,
+      }
+    : weights;
+
+  const payoutScore = disablePayout ? 0 : scorePayoutRatio(inputs.payoutRatio);
   const fcfScore = scoreFcfCover(inputs.fcfPayoutRatio);
   const streakScore = scoreGrowthStreak(inputs.growthStreakYears);
   const deScore = scoreDebtEquity(inputs.debtToEquity);
 
   const total =
-    payoutScore * weights.payout +
-    fcfScore * weights.fcfCover +
-    streakScore * weights.growthStreak +
-    deScore * weights.debtEquity;
+    payoutScore * effectiveWeights.payout +
+    fcfScore * effectiveWeights.fcfCover +
+    streakScore * effectiveWeights.growthStreak +
+    deScore * effectiveWeights.debtEquity;
 
   const warnings: string[] = [];
-  if (inputs.payoutRatio !== null && inputs.payoutRatio > 0.9) {
+  if (disablePayout) {
+    if (kind === 'reit') {
+      warnings.push('REIT — GAAP payout ratio not applicable (use AFFO; FCF cover is a proxy)');
+    } else if (kind === 'bdc') {
+      warnings.push('BDC — GAAP payout ratio not applicable (use NII; FCF cover is a proxy)');
+    }
+    // For ETFs we silently omit the warning — pass-through is normal.
+  } else if (inputs.payoutRatio !== null && inputs.payoutRatio > 0.9) {
     warnings.push(`Payout ratio ${(inputs.payoutRatio * 100).toFixed(1)}% — at or above cut zone`);
   }
   if (inputs.fcfPayoutRatio !== null && inputs.fcfPayoutRatio > 1.0) {
@@ -146,17 +178,17 @@ export function scoreSustainability(
   if (inputs.debtToEquity !== null && inputs.debtToEquity > 4) {
     warnings.push(`Debt/equity ${inputs.debtToEquity.toFixed(2)} — heavy leverage`);
   }
-  if (inputs.growthStreakYears === 0) {
+  if (inputs.growthStreakYears === 0 && kind === 'stock') {
     warnings.push('No dividend growth streak yet');
   }
 
   return {
     total: Math.round(total * 10) / 10,
     components: {
-      payout: { score: payoutScore, weight: weights.payout },
-      fcfCover: { score: fcfScore, weight: weights.fcfCover },
-      growthStreak: { score: streakScore, weight: weights.growthStreak },
-      debtEquity: { score: deScore, weight: weights.debtEquity },
+      payout: { score: payoutScore, weight: effectiveWeights.payout },
+      fcfCover: { score: fcfScore, weight: effectiveWeights.fcfCover },
+      growthStreak: { score: streakScore, weight: effectiveWeights.growthStreak },
+      debtEquity: { score: deScore, weight: effectiveWeights.debtEquity },
     },
     warnings,
   };

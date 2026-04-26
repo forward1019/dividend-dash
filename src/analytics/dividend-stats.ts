@@ -40,7 +40,8 @@ export function detectFrequency(events: DividendEventInput[]): Frequency {
 
 /**
  * Sum of per-share dividends paid in the trailing 12 months ending `asOfDate`.
- * Returned in dollars (per share) for convenience.
+ * Returned in dollars (per share) for convenience. Includes special and
+ * supplemental dividends — i.e. this is the cash-realized number.
  */
 export function ttmDividendPerShare(events: DividendEventInput[], asOfDate?: string): number {
   const end = asOfDate ?? new Date().toISOString().slice(0, 10);
@@ -55,6 +56,115 @@ export function ttmDividendPerShare(events: DividendEventInput[], asOfDate?: str
     .reduce((acc, e) => acc + e.amountPerShareMicros, 0);
 
   return microsToDollars(totalMicros);
+}
+
+/** Per-event classification produced by {@link classifyDividends}. */
+export type DividendClass = 'regular' | 'special';
+
+export interface ClassifiedDividend extends DividendEventInput {
+  classification: DividendClass;
+}
+
+/**
+ * Classify each event as 'regular' or 'special'.
+ *
+ * Algorithm (anchor-cohort, applied per ±`windowRadius` window):
+ *   1. Within the local window, find the amount that has the most
+ *      neighbors within `bandPct` ("the anchor" — the dominant regular).
+ *   2. If the anchor's cohort covers ≥`minAnchorShare` of the window,
+ *      the stream has a clear regular cadence here. Events whose
+ *      amount is more than `bandPct` away from the anchor AND at least
+ *      `specialMargin` above it are tagged 'special'. Everything else
+ *      (including events below the anchor — usually a temporary cut, not
+ *      a "special") is tagged 'regular'.
+ *   3. If no amount qualifies as an anchor (stream too noisy — ETFs
+ *      with bumpy quarterly payouts), default everything to 'regular'.
+ *
+ * Why this works on real data:
+ *   - Steady $0.25 quarterly: every event is the anchor → all-regular.
+ *   - 5%/yr raises: tight cohort drifts smoothly → all-regular.
+ *   - MAIN ($0.26 monthly + $0.30 quarterly supplementals): $0.26 is
+ *     the anchor (covers >50% of any 9-event window), $0.30 events sit
+ *     ≥15% above and get tagged 'special'.
+ *   - 1-off 3× bonus on a stable stream: anchor is the steady amount,
+ *     bonus is well above → 'special'.
+ *   - Vanguard-style ETF with $0.84/$0.86/$0.94/$1.02 quarterly spread:
+ *     no single amount dominates → all-regular (correct: these are just
+ *     pass-through fluctuations, not specials).
+ *
+ * Streams shorter than 6 events are always classified 'regular'.
+ *
+ * Used by:
+ *   - {@link forwardYield}                — what's sustainable forward
+ *   - {@link ttmRegularDividendPerShare}  — what the issuer commits to
+ */
+export function classifyDividends(
+  events: DividendEventInput[],
+  opts: {
+    bandPct?: number;
+    windowRadius?: number;
+    minAnchorShare?: number;
+    specialMargin?: number;
+  } = {},
+): ClassifiedDividend[] {
+  const bandPct = opts.bandPct ?? 0.05;
+  const windowRadius = opts.windowRadius ?? 4;
+  const minAnchorShare = opts.minAnchorShare ?? 0.5;
+  const specialMargin = opts.specialMargin ?? 0.1;
+  const sorted = [...events].sort((a, b) => (a.exDate < b.exDate ? -1 : 1));
+  if (sorted.length < 6) {
+    return sorted.map((e) => ({ ...e, classification: 'regular' as const }));
+  }
+
+  return sorted.map((ev, i) => {
+    const lo = Math.max(0, i - windowRadius);
+    const hi = Math.min(sorted.length - 1, i + windowRadius);
+    const window = sorted.slice(lo, hi + 1);
+
+    // Find the amount whose ±bandPct cohort covers the most events.
+    let bestCohort = 0;
+    let anchorMicros = 0;
+    for (const candidate of window) {
+      const c = candidate.amountPerShareMicros;
+      if (c <= 0) continue;
+      let cohort = 0;
+      for (const w of window) {
+        if (Math.abs(w.amountPerShareMicros - c) / c <= bandPct) cohort++;
+      }
+      if (cohort > bestCohort) {
+        bestCohort = cohort;
+        anchorMicros = c;
+      }
+    }
+
+    // Stream is too noisy (no clear regular cohort)? Default to regular.
+    if (anchorMicros === 0 || bestCohort / window.length < minAnchorShare) {
+      return { ...ev, classification: 'regular' as DividendClass };
+    }
+
+    const ratio = ev.amountPerShareMicros / anchorMicros;
+    // Within the band of the anchor, or below it — call it regular.
+    // Below-anchor events are typically temporary cuts, not specials,
+    // and tagging them special would mask cut-detection logic.
+    if (ratio <= 1 + Math.max(bandPct, specialMargin)) {
+      return { ...ev, classification: 'regular' as DividendClass };
+    }
+    return { ...ev, classification: 'special' as DividendClass };
+  });
+}
+
+/**
+ * TTM dividend per share counting only `regular` payments (specials and
+ * supplementals excluded). This is the number to use for "what does the
+ * issuer commit to paying me" and for forward yield projections.
+ */
+export function ttmRegularDividendPerShare(
+  events: DividendEventInput[],
+  asOfDate?: string,
+): number {
+  const classified = classifyDividends(events);
+  const regulars = classified.filter((c) => c.classification === 'regular');
+  return ttmDividendPerShare(regulars, asOfDate);
 }
 
 /**
@@ -128,14 +238,22 @@ export function growthStreakYears(events: DividendEventInput[], asOfDate?: strin
 }
 
 /**
- * Forward yield estimate: annualize the most recent dividend payment based on
- * the detected frequency, and divide by `priceCents`.
+ * Forward yield estimate: annualize the most recent REGULAR dividend payment
+ * based on the detected frequency, and divide by `priceCents`. Specials and
+ * supplementals are excluded so a one-off bonus (MAIN, CME, etc.) doesn't
+ * inflate the projection.
  */
 export function forwardYield(events: DividendEventInput[], priceCents: number): number | null {
   if (priceCents <= 0 || events.length === 0) return null;
-  const sorted = [...events].sort((a, b) => (a.exDate < b.exDate ? 1 : -1));
+  const classified = classifyDividends(events);
+  const regulars = classified.filter((c) => c.classification === 'regular');
+  if (regulars.length === 0) return null;
+
+  const sorted = [...regulars].sort((a, b) => (a.exDate < b.exDate ? 1 : -1));
   const latest = sorted[0]!;
-  const freq = detectFrequency(events);
+  // Frequency is detected from regulars only — supplementals would tighten
+  // the median gap and falsely upgrade a quarterly payer to "monthly".
+  const freq = detectFrequency(regulars);
   const multiplier: Partial<Record<Frequency, number>> = {
     monthly: 12,
     quarterly: 4,

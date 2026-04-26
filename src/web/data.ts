@@ -10,12 +10,14 @@ import { Database } from 'bun:sqlite';
 
 import {
   type DividendEventInput,
+  classifyDividends,
   detectFrequency,
   dividendCagr,
   forwardYield,
   growthStreakYears,
   trailingYield,
   ttmDividendPerShare,
+  ttmRegularDividendPerShare,
 } from '../analytics/dividend-stats.ts';
 import { type SustainabilityScore, scoreSustainability } from '../analytics/sustainability.ts';
 import { config } from '../lib/config.ts';
@@ -63,9 +65,11 @@ export interface TickerCard {
   fiftyTwoWeekHigh: number | null;
   fiftyTwoWeekLow: number | null;
   // dividends
-  ttmDps: number | null; // dollars
-  forwardYield: number | null; // 0..1
-  trailingYield: number | null; // 0..1
+  ttmDps: number | null; // dollars (incl. specials — what was actually paid)
+  ttmDpsRegular: number | null; // dollars (regular only — what's recurring)
+  hasSpecialDividends: boolean; // true if a special was detected in the last 24mo
+  forwardYield: number | null; // 0..1 — based on regular cadence only
+  trailingYield: number | null; // 0..1 — TTM realized incl. specials
   cagr5y: number | null; // 0..1
   cagr10y: number | null;
   growthStreak: number;
@@ -492,6 +496,21 @@ export function getTickerNews(ticker: string, limit = 10): NewsRow[] {
   }));
 }
 
+/**
+ * Map the universe's editorial category onto the structural `securityKind`
+ * used by the sustainability scorer. REITs and BDCs/MLPs get treated as
+ * special-case payers whose GAAP payout ratio doesn't apply.
+ */
+function securityKindFromCategory(
+  category: UniverseCategory,
+  kind: 'etf' | 'stock',
+): 'stock' | 'etf' | 'reit' | 'bdc' {
+  if (kind === 'etf') return 'etf';
+  if (category === 'reit') return 'reit';
+  if (category === 'mlp_other') return 'bdc';
+  return 'stock';
+}
+
 // === Card builder ===
 
 export function buildTickerCard(u: UniverseTicker): TickerCard {
@@ -505,6 +524,20 @@ export function buildTickerCard(u: UniverseTicker): TickerCard {
     const fwd = priceCents !== null ? forwardYield(events, priceCents) : null;
     const trail = priceCents !== null ? trailingYield(events, priceCents) : null;
     const ttm = events.length > 0 ? ttmDividendPerShare(events) : null;
+    const ttmRegular = events.length > 0 ? ttmRegularDividendPerShare(events) : null;
+    // Did we see a special dividend in the last 24 months? Drives the
+    // dashboard "regular vs total" disclosure.
+    const hasSpecials = (() => {
+      if (events.length === 0) return false;
+      const cutoff = (() => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - 2);
+        return d.toISOString().slice(0, 10);
+      })();
+      return classifyDividends(events).some(
+        (c) => c.classification === 'special' && c.exDate >= cutoff,
+      );
+    })();
     const c5 = dividendCagr(events, 5);
     const c10 = dividendCagr(events, 10);
     const streak = growthStreakYears(events);
@@ -520,6 +553,7 @@ export function buildTickerCard(u: UniverseTicker): TickerCard {
       fcfPayoutRatio: fund?.fcfPayoutRatio ?? null,
       growthStreakYears: streak,
       debtToEquity: fund?.debtToEquity ?? null,
+      securityKind: securityKindFromCategory(u.category, u.kind),
     });
 
     const high52 = (() => {
@@ -543,6 +577,8 @@ export function buildTickerCard(u: UniverseTicker): TickerCard {
       fiftyTwoWeekHigh: high52,
       fiftyTwoWeekLow: low52,
       ttmDps: ttm,
+      ttmDpsRegular: ttmRegular,
+      hasSpecialDividends: hasSpecials,
       forwardYield: fwd,
       trailingYield: trail,
       cagr5y: c5,
