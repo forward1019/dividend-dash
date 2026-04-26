@@ -16,6 +16,7 @@
 
 import { Database } from 'bun:sqlite';
 
+import { validateUniverseAgainstStooq } from '../ingest/stooq.ts';
 import {
   fetchEtfHoldings,
   fetchQuoteSnapshot,
@@ -50,6 +51,12 @@ interface CliArgs {
   quotesOnly: boolean;
   /** Skip fetching news entirely (for offline/testing scenarios). */
   skipNews: boolean;
+  /**
+   * Skip the post-fetch Stooq cross-validation. Off by default — the
+   * validation is cheap (~10s for 40 tickers) and surfaces real
+   * Yahoo-vs-reality drift the moment it happens.
+   */
+  skipValidation: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -58,6 +65,7 @@ function parseArgs(argv: string[]): CliArgs {
     refreshPricesOnly: false,
     quotesOnly: false,
     skipNews: false,
+    skipValidation: false,
   };
   for (const a of argv.slice(2)) {
     if (a.startsWith('--ticker=')) {
@@ -72,6 +80,8 @@ function parseArgs(argv: string[]): CliArgs {
       args.quotesOnly = true;
     } else if (a === '--skip-news') {
       args.skipNews = true;
+    } else if (a === '--skip-validation') {
+      args.skipValidation = true;
     }
   }
   return args;
@@ -106,11 +116,29 @@ async function main() {
       log.info(`[${ticker}] fetching metadata`);
       await fetchAndUpsertSecurity(db, ticker);
 
-      // 2. Dividend history (skip on refresh-prices / quotes-only modes)
+      // 2. Dividend history.
+      //   - Default (full seed): 20-year backfill.
+      //   - --refresh-prices / --quotes-only: 90-day window so new ex-dividend
+      //     declarations land in the DB without paying the 20y price.
+      //     Existing rows are de-duped by (ticker, ex_date, source) UNIQUE,
+      //     so re-fetching the recent window is idempotent.
       if (!args.refreshPricesOnly && !args.quotesOnly) {
         log.info(`[${ticker}] fetching 20y dividend history`);
         const result = await fetchAndUpsertDividends(db, ticker);
         log.info(`[${ticker}] dividends: ${result.inserted} inserted / ${result.total} fetched`);
+      } else {
+        log.info(`[${ticker}] fetching recent dividend window (last 90 days)`);
+        const recentStart = (() => {
+          const d = new Date();
+          d.setUTCDate(d.getUTCDate() - 90);
+          return d.toISOString().slice(0, 10);
+        })();
+        const result = await fetchAndUpsertDividends(db, ticker, { startDate: recentStart });
+        if (result.inserted > 0) {
+          log.info(
+            `[${ticker}] new dividends: ${result.inserted} inserted (out of ${result.total})`,
+          );
+        }
       }
 
       // 3. Latest quote price
@@ -168,6 +196,37 @@ async function main() {
 
     // Light pacing to avoid yfinance rate-limiting.
     await new Promise((r) => setTimeout(r, 250));
+  }
+
+  log.info(`Done fetching. ${ok} ok, ${failed} failed.`);
+
+  // Cross-validate Yahoo's stored prices against Stooq, a fully independent
+  // free EOD price source. Catches the "Yahoo silently broke" failure mode
+  // that would otherwise need a human to spot.
+  if (!args.skipValidation && targets.length > 0) {
+    log.info('Cross-validating prices against Stooq...');
+    const validation = await validateUniverseAgainstStooq(
+      db,
+      targets.map((t) => t.ticker),
+    );
+    const disagreements = validation.filter((v) => !v.agrees);
+    const noYahoo = validation.filter((v) => v.reason === 'no-yahoo').length;
+    const missingStooq = validation.filter((v) => v.reason === 'missing-source').length;
+    const priceDrift = validation.filter((v) => v.reason === 'price-diverged');
+    const dateDrift = validation.filter((v) => v.reason === 'date-mismatch');
+
+    log.info(
+      `Validation: ${validation.length - disagreements.length}/${validation.length} agree with Stooq (${priceDrift.length} price-drift, ${dateDrift.length} date-mismatch, ${missingStooq} no-stooq, ${noYahoo} no-yahoo)`,
+    );
+    for (const v of priceDrift) {
+      const pct = v.deltaPct !== null ? (v.deltaPct * 100).toFixed(2) : 'n/a';
+      log.warn(
+        `[${v.ticker}] price drift: yahoo $${v.yahooClose} vs stooq $${v.stooqClose} (${pct}%)`,
+      );
+    }
+    for (const v of dateDrift) {
+      log.warn(`[${v.ticker}] date mismatch: yahoo bar ${v.date} vs stooq has different date`);
+    }
   }
 
   log.info(`Done. ${ok} ok, ${failed} failed.`);
