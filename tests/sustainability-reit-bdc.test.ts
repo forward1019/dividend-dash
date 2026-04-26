@@ -66,6 +66,61 @@ describe('sustainability — securityKind', () => {
     expect(etf.components.payout.weight).toBe(0);
   });
 
+  test('MLP with absurd FCF payout (K-1 artifact) is treated as data noise, not catastrophe', () => {
+    // EPD-style: yfinance reports FCF payout of 21,132% because MLPs
+    // report DCF (distributable cash flow) under partnership accounting,
+    // and yfinance's FCF figure is essentially noise (D&A-heavy K-1).
+    // Without the MLP hint, the scorer would treat 211x FCF payout as a
+    // hard zero — dominating ~70% of the score and turning a 19y-streak
+    // payer into a 17/100 score.
+    const noisyFcf = scoreSustainability({
+      payoutRatio: 0.81,
+      fcfPayoutRatio: 211.32, // garbage K-1 artifact
+      growthStreakYears: 19,
+      debtToEquity: 1.14,
+      securityKind: 'mlp',
+    });
+    // BDC-mode (the old behaviour we used to apply to MLPs) would zero
+    // the FCF cover and produce a catastrophic score.
+    const bdcMode = scoreSustainability({
+      payoutRatio: 0.81,
+      fcfPayoutRatio: 211.32,
+      growthStreakYears: 19,
+      debtToEquity: 1.14,
+      securityKind: 'bdc',
+    });
+    // MLP-mode should score meaningfully higher because the noisy FCF
+    // is clamped to "unknown" rather than scored as a 0.
+    expect(noisyFcf.total).toBeGreaterThan(bdcMode.total);
+    expect(noisyFcf.total - bdcMode.total).toBeGreaterThanOrEqual(10);
+    // MLP warning surfaces the K-1 explanation
+    expect(noisyFcf.warnings.some((w) => w.includes('MLP'))).toBe(true);
+    // But the misleading "paying more than free cash flow" warning is
+    // suppressed for MLPs.
+    expect(noisyFcf.warnings.some((w) => w.includes('paying more than free cash flow'))).toBe(
+      false,
+    );
+    // GAAP payout is still disabled for MLPs
+    expect(noisyFcf.components.payout.weight).toBe(0);
+    expect(noisyFcf.components.fcfCover.weight).toBeCloseTo(0.7, 3);
+  });
+
+  test('MLP with plausible FCF payout (≤5x) is scored normally', () => {
+    // ET-style with hypothetically clean FCF data — should still be
+    // treated like a BDC: GAAP payout disabled, FCF cover weighted up.
+    const cleanMlp = scoreSustainability({
+      payoutRatio: 1.05,
+      fcfPayoutRatio: 0.85,
+      growthStreakYears: 4,
+      debtToEquity: 1.4,
+      securityKind: 'mlp',
+    });
+    expect(cleanMlp.warnings.some((w) => w.includes('MLP'))).toBe(true);
+    // FCF score path runs normally because the ratio is below the noise
+    // threshold (5.0).
+    expect(cleanMlp.components.fcfCover.score).toBeGreaterThan(0);
+  });
+
   test('default (no kind) preserves legacy stock behaviour', () => {
     const before = scoreSustainability({
       payoutRatio: 0.6,

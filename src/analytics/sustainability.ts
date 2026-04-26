@@ -30,9 +30,18 @@ export interface SustainabilityInputs {
    * disabled and its weight is shifted onto FCF cover, which is a
    * cleaner proxy for distributable cash. ETFs pass-through dividends
    * and have no payout ratio at all — same treatment.
+   *
+   * MLPs ('mlp') are a third special case: they report distributable
+   * cash flow (DCF) under K-1 partnership accounting, and yfinance
+   * doesn't surface DCF. The reported FCF is noise (D&A-heavy, often
+   * negative or absurdly small denominator → 1000%+ payout ratios).
+   * For MLPs we disable GAAP payout AND clamp implausible FCF cover
+   * ratios (>5.0) as null so the scorer applies the unknown-FCF
+   * penalty instead of treating data noise as a 0-point catastrophe.
+   *
    * Default 'stock' preserves legacy behaviour.
    */
-  securityKind?: 'stock' | 'etf' | 'reit' | 'bdc';
+  securityKind?: 'stock' | 'etf' | 'reit' | 'bdc' | 'mlp';
 }
 
 export interface SustainabilityScore {
@@ -127,15 +136,24 @@ export function scoreDebtEquity(de: number | null): number {
   return 0;
 }
 
+/**
+ * For MLPs, FCF payout ratios above this multiple of distributions are
+ * almost certainly K-1 / D&A reporting artifacts rather than a real
+ * solvency signal. We treat them as "unknown" so the scorer applies
+ * the standard unknown-FCF penalty rather than zero-ing the component.
+ */
+const MLP_FCF_NOISE_THRESHOLD = 5.0;
+
 export function scoreSustainability(
   inputs: SustainabilityInputs,
   weights: ScoreWeights = DEFAULT_WEIGHTS,
 ): SustainabilityScore {
   const kind = inputs.securityKind ?? 'stock';
-  // REITs / BDCs / ETFs: GAAP payout ratio is meaningless. Disable the
-  // payout component and reweight onto FCF cover (the closest free
-  // proxy for distributable cash without pulling AFFO/NII from EDGAR).
-  const disablePayout = kind === 'reit' || kind === 'bdc' || kind === 'etf';
+  // REITs / BDCs / MLPs / ETFs: GAAP payout ratio is meaningless.
+  // Disable the payout component and reweight onto FCF cover (the
+  // closest free proxy for distributable cash without pulling
+  // AFFO/NII/DCF from EDGAR).
+  const disablePayout = kind === 'reit' || kind === 'bdc' || kind === 'mlp' || kind === 'etf';
   const effectiveWeights: ScoreWeights = disablePayout
     ? {
         payout: 0,
@@ -145,8 +163,18 @@ export function scoreSustainability(
       }
     : weights;
 
+  // For MLPs, yfinance's FCF figure reflects K-1 partnership accounting
+  // and is structurally noisy. Clamp absurd ratios to null so the
+  // unknown-FCF penalty applies instead of a hard zero.
+  const fcfRatioForScoring =
+    kind === 'mlp' &&
+    inputs.fcfPayoutRatio !== null &&
+    inputs.fcfPayoutRatio > MLP_FCF_NOISE_THRESHOLD
+      ? null
+      : inputs.fcfPayoutRatio;
+
   const payoutScore = disablePayout ? 0 : scorePayoutRatio(inputs.payoutRatio);
-  const fcfScore = scoreFcfCover(inputs.fcfPayoutRatio);
+  const fcfScore = scoreFcfCover(fcfRatioForScoring);
   const streakScore = scoreGrowthStreak(inputs.growthStreakYears);
   const deScore = scoreDebtEquity(inputs.debtToEquity);
 
@@ -162,17 +190,23 @@ export function scoreSustainability(
       warnings.push('REIT — GAAP payout ratio not applicable (use AFFO; FCF cover is a proxy)');
     } else if (kind === 'bdc') {
       warnings.push('BDC — GAAP payout ratio not applicable (use NII; FCF cover is a proxy)');
+    } else if (kind === 'mlp') {
+      warnings.push(
+        'MLP — GAAP payout & FCF cover both unreliable (K-1 partnership accounting; use DCF)',
+      );
     }
     // For ETFs we silently omit the warning — pass-through is normal.
   } else if (inputs.payoutRatio !== null && inputs.payoutRatio > 0.9) {
     warnings.push(`Payout ratio ${(inputs.payoutRatio * 100).toFixed(1)}% — at or above cut zone`);
   }
-  if (inputs.fcfPayoutRatio !== null && inputs.fcfPayoutRatio > 1.0) {
+  // For MLPs we don't shame an artifact-driven FCF cover ratio — the
+  // MLP warning above already explains the situation.
+  if (kind !== 'mlp' && inputs.fcfPayoutRatio !== null && inputs.fcfPayoutRatio > 1.0) {
     warnings.push(
       `FCF payout ratio ${(inputs.fcfPayoutRatio * 100).toFixed(1)}% — paying more than free cash flow`,
     );
   }
-  if (inputs.fcfPayoutRatio === null) {
+  if (kind !== 'mlp' && inputs.fcfPayoutRatio === null) {
     warnings.push('FCF cover unknown — may indicate negative or near-zero free cash flow');
   }
   if (inputs.debtToEquity !== null && inputs.debtToEquity > 4) {

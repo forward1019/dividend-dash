@@ -497,17 +497,31 @@ export function getTickerNews(ticker: string, limit = 10): NewsRow[] {
 }
 
 /**
+ * Tickers in the `mlp_other` category that are MLPs (publicly traded
+ * partnerships issuing K-1s), not BDCs. yfinance reports GAAP-style FCF
+ * for MLPs that bears no relation to distributable cash flow (DCF), so
+ * the scorer needs to clamp those FCF ratios as data noise rather than
+ * solvency signal. See sustainability.ts MLP_FCF_NOISE_THRESHOLD.
+ *
+ * If the universe ever gains a way to mark MLPs structurally (e.g. an
+ * `issuerType` field on UniverseTicker), this set should move there.
+ */
+const MLP_TICKERS: ReadonlySet<string> = new Set(['EPD', 'ET']);
+
+/**
  * Map the universe's editorial category onto the structural `securityKind`
- * used by the sustainability scorer. REITs and BDCs/MLPs get treated as
- * special-case payers whose GAAP payout ratio doesn't apply.
+ * used by the sustainability scorer. REITs, BDCs, and MLPs each get
+ * special-case treatment because their GAAP payout / FCF figures don't
+ * map cleanly onto a "is the dividend safe?" question.
  */
 function securityKindFromCategory(
   category: UniverseCategory,
   kind: 'etf' | 'stock',
-): 'stock' | 'etf' | 'reit' | 'bdc' {
+  ticker: string,
+): 'stock' | 'etf' | 'reit' | 'bdc' | 'mlp' {
   if (kind === 'etf') return 'etf';
   if (category === 'reit') return 'reit';
-  if (category === 'mlp_other') return 'bdc';
+  if (category === 'mlp_other') return MLP_TICKERS.has(ticker) ? 'mlp' : 'bdc';
   return 'stock';
 }
 
@@ -553,7 +567,7 @@ export function buildTickerCard(u: UniverseTicker): TickerCard {
       fcfPayoutRatio: fund?.fcfPayoutRatio ?? null,
       growthStreakYears: streak,
       debtToEquity: fund?.debtToEquity ?? null,
-      securityKind: securityKindFromCategory(u.category, u.kind),
+      securityKind: securityKindFromCategory(u.category, u.kind, u.ticker),
     });
 
     const high52 = (() => {
