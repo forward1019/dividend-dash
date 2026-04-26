@@ -568,7 +568,7 @@ function renderCard(c: TickerCard, _history: { exDate: string; amount: number }[
         <div class="num font-semibold ink">${fmtUsd(c.priceCents)}</div>
       </div>
       <div>
-        <div class="label text-[10px]">Forward yield</div>
+        <div class="label text-[10px]">Forward yield${c.hasSpecialDividends ? ' <span class="muted" title="Pays specials/supplementals — yield is regular cadence only">✦</span>' : ''}</div>
         <div class="num font-semibold ${yldColor}">${fwdYield}</div>
       </div>
       <div>

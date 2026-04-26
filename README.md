@@ -52,9 +52,24 @@ The 40-ticker universe spans Dividend Kings (KO, JNJ, PG, MMM, EMR), Aristocrats
 ### Refreshing data
 
 ```bash
-bun run seed-universe   # full backfill: 20y dividends + quotes + snapshots + holdings + news
-bun run refresh-quotes  # light: skip dividend backfill, refresh just quotes/snapshots/holdings/news (cron-friendly)
+bun run seed-universe   # full backfill: 20y dividends + quotes + snapshots + holdings + news + Stooq cross-check
+bun run refresh-quotes  # light: 90-day dividend window + quotes/snapshots/holdings/news + Stooq cross-check (cron-friendly)
 ```
+
+Both paths run a Yahoo↔Stooq price cross-validation at the end and warn on >1% drift or date mismatch — catches the "Yahoo silently broke" failure mode without needing a human to spot it.
+
+The recommended schedule (set up via Hermes cron, see `docs/operations.md`):
+
+| When | Command | Why |
+|---|---|---|
+| Daily 01:00 PT Tue–Sat | `bun run refresh-quotes` | Captures Mon–Fri close after Yahoo consolidates EOD; ~3 min |
+| Weekly Sat 08:00 PT | `bun run seed-universe` | Full 20y backfill catches retroactive Yahoo corrections; ~12 min |
+
+### Data quality
+
+- **Prices** — verified to the cent against Stooq (independent free EOD source) on every run. 40/40 universe agrees as of 2026-04-25.
+- **Special / supplemental dividends** — automatically detected via an anchor-cohort classifier and excluded from forward-yield projections so a one-off bonus (MAIN's quarterly supplementals, CME's annual special) can't inflate the headline number. Cards show a `✦` badge when a ticker has paid a special in the last 24 months.
+- **REIT / BDC sustainability** — GAAP payout ratio is structurally meaningless for these issuers (depressed by D&A or one-time investment-loss accruals). The scorer detects them via the universe category and routes the payout-component weight onto FCF cover with an explicit "use AFFO/NII; FCF is a proxy" warning.
 
 JSON API: `GET /api/universe`, `GET /api/ticker/:t`, `GET /api/calendar`.
 
