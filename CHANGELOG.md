@@ -4,7 +4,78 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added — universe expansion (40 → 60 tickers)
+## [0.6.0] — 2026-04-27
+
+UI cleanup pass. v0.5 was dense and editorial — also too much. The home
+page had five competing sections and a 60-card grid eating 80% of the
+viewport. v0.6 collapses to a calmer, modern, single-scroll experience.
+The DESIGN.md philosophy didn't change (still editorial finance media,
+Bloomberg / Morningstar / FT references); the **execution** got quieter.
+
+### Changed — dashboard
+
+- **One scroll, four sections** (was five). Hero → Income outlook →
+  Movers → Browse. The home page is one comfortable scroll instead of
+  ten viewport-heights of cards.
+- **Browse defaults to a dense table** with sticky header, sortable, and
+  a TTM sparkline per row. Toggle to the old card grid via the
+  List / Grid switch in the section header (preference saved in
+  localStorage).
+- **Universe shape** now lives as a single inline strip
+  ("Mix · 20 ETFs · 40 stocks · 51 Quarterly · 9 Monthly · top sectors:
+  Real Estate 8 · …") instead of three competing mini-charts.
+- **Hero is editorial.** Big serif headline ("60 dividend payers,
+  tracked.") sets the page, four KPI tiles below, calmer descriptive
+  prose. No card-on-card noise.
+- **Movers leaderboards** dropped their card borders — they're labelled
+  ranked lists now, faster to scan, more "tear-sheet" than "dashboard".
+- **Income outlook** condensed: the three KPI tiles, the 13-week bar
+  chart, and the largest-upcoming list now share one calm section
+  instead of two.
+
+### Changed — design system
+
+- **Dropped page-background radial gradients.** The "AI-dashboard glow"
+  is gone; the page is plain `--bg`.
+- **Lower-contrast surfaces.** Cards are 1–2 shades closer to bg and
+  have hairline borders (8% in dark, 6% in light, was 10–18%). No
+  resting box-shadow — hover is what changes.
+- **Slimmer header.** Solid emerald brand mark (no gradient), no version
+  pill, slightly tighter nav padding. Same shape, less noise.
+- **Cyan + amber pills retired from the dashboard.** Reserved for
+  per-ticker pages and warnings only. ETF/STK pills on home use
+  emerald + violet.
+- **More vertical rhythm.** `space-y-12` between top-level dashboard
+  sections (was `space-y-7`); `space-y-6` between subsections;
+  body `line-height: 1.55`.
+- **Charts are flatter.** No vertical grid lines, hairline horizontal
+  grid only, smaller (9–10px) tick labels, no chart-area background
+  fill on bars. Single-series defaults to emerald.
+
+### Added
+
+- New `.ticker-table` component class for the browse list view.
+- New `.kpi-bare` modifier for KPI-style numbers without a card border.
+- Toggleable List / Grid view in browse, with per-user preference saved
+  to localStorage.
+- Leaderboard rows fall back to the category label when a ticker's
+  display name is the same string as its symbol (a few ETFs lacked a
+  proper `securities.name` row, so "QYLD QYLD" became "QYLD Income /
+  Covered-Call ETFs"). Same fix on the browse table.
+
+### Fixed
+
+- Right-aligned `<th class="text-right">` headers in `.data-table` now
+  actually right-align (the v0.5 CSS forced left). Calendar headers
+  (Ex-date / Days / Last DPS) are now aligned with their cells.
+
+### Migration note
+
+No data migration. Just `bun run web` and the new design loads.
+DESIGN.md bumped to v0.6 — read it before adding any new component
+or page.
+
+## [0.5.1] — universe expansion (40 → 60 tickers)
 
 The watchlist had real coverage gaps for a dividend tracker:
 zero big-cap tech dividend payers, zero financials, only three REITs,

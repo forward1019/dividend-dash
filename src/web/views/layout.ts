@@ -1,19 +1,20 @@
 /**
  * Shared HTML layout. All pages render through this.
  *
- * v0.5 design system rewrite. See DESIGN.md for the full reference.
+ * v0.6 cleanup pass. See DESIGN.md for the full reference.
  *
- * Highlights:
- *   - Editorial type system: Source Serif 4 for display, Inter for UI,
- *     JetBrains Mono with tabular-nums for all numerics.
- *   - Refined dark + light palettes (warm off-white in light, deeper
- *     ink in dark) with a single accent (emerald) and amber for
- *     highlights / warnings.
- *   - Component utility classes: .kpi, .delta, .delta-pos, .delta-neg,
- *     .data-table, .section-h, .grade-A..F, .pill, .ticker-card.
- *   - Header: cleaner brand mark, search button + ⌘K, segmented theme
- *     toggle, optional "as of" timestamp slot.
- *   - Cmd+K palette: unchanged (already great).
+ * What changed in v0.6:
+ *   - Dropped page-background radial gradients (the "AI dashboard glow").
+ *   - Lower-contrast surfaces, hairline borders. Resting cards have no
+ *     shadow; hover does the talking.
+ *   - Simpler header: solid-fill brand mark (no gradient), no version
+ *     pill, slimmer height.
+ *   - Single accent (emerald). Amber retired from decoration; reserved
+ *     for warnings.
+ *   - More generous vertical rhythm (`space-y-10` between sections).
+ *   - New utility class `.ticker-row` for the dashboard browse table.
+ *   - Existing classes preserved: .kpi, .delta, .data-table, .section-h,
+ *     .grade-*, .pill, .ticker-card, .hero-quote, .anchor-ribbon.
  */
 
 export interface LayoutOpts {
@@ -322,36 +323,36 @@ window.__chartTheme = function() {
 const DESIGN_CSS = `
 :root {
   color-scheme: dark;
-  /* dark palette */
+  /* dark palette — v0.6: quieter, lower-contrast surfaces */
   --bg: #0a0d14;
-  --bg-elev: #0f131c;
-  --surface: #161b27;
-  --surface-2: #1d2433;
-  --rule: rgba(148, 163, 184, 0.10);
-  --rule-strong: rgba(148, 163, 184, 0.18);
+  --bg-elev: #0e1218;
+  --surface: #11151e;
+  --surface-2: #161b22;
+  --rule: rgba(148, 163, 184, 0.08);
+  --rule-strong: rgba(148, 163, 184, 0.16);
   --ink: #f1f5f9;
   --ink-2: #e2e8f0;
   --ink-3: #cbd5e1;
   --ink-muted: #94a3b8;
   --ink-faint: #64748b;
   --accent: #34d399;
-  --accent-2: #fbbf24;
+  --accent-2: #fbbf24; /* warning only */
   --positive: #4ade80;
   --negative: #f87171;
   --neutral: #94a3b8;
-  /* shadows */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20), 0 0 0 1px rgba(148,163,184,0.06);
-  --shadow-md: 0 4px 16px -4px rgba(0,0,0,0.30), 0 0 0 1px rgba(148,163,184,0.08);
-  --shadow-glow: 0 8px 32px -12px rgba(52, 211, 153, 0.25);
+  /* shadows — used only on hover, never at rest */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-md: 0 4px 16px -6px rgba(0,0,0,0.30);
+  --shadow-glow: 0 6px 24px -10px rgba(52, 211, 153, 0.22);
 }
 :root[data-resolved-theme="light"] {
   color-scheme: light;
   --bg: #fafaf6;
   --bg-elev: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f5f4ee;
-  --rule: rgba(15, 23, 36, 0.08);
-  --rule-strong: rgba(15, 23, 36, 0.14);
+  --surface-2: #f3f2ec;
+  --rule: rgba(15, 23, 36, 0.06);
+  --rule-strong: rgba(15, 23, 36, 0.12);
   --ink: #0a0d14;
   --ink-2: #1f2937;
   --ink-3: #334155;
@@ -362,31 +363,22 @@ const DESIGN_CSS = `
   --positive: #047857;
   --negative: #be123c;
   --neutral: #64748b;
-  --shadow-sm: 0 1px 2px rgba(15,23,36,0.04), 0 0 0 1px rgba(15,23,36,0.05);
-  --shadow-md: 0 1px 3px rgba(15,23,36,0.05), 0 8px 24px -10px rgba(15,23,36,0.08);
-  --shadow-glow: 0 8px 28px -10px rgba(5, 150, 105, 0.30);
+  --shadow-sm: 0 1px 2px rgba(15,23,36,0.04);
+  --shadow-md: 0 1px 3px rgba(15,23,36,0.05), 0 8px 20px -12px rgba(15,23,36,0.08);
+  --shadow-glow: 0 6px 22px -10px rgba(5, 150, 105, 0.22);
 }
 
 * { box-sizing: border-box; }
 html { background: var(--bg); }
 body {
-  background:
-    radial-gradient(1400px 900px at 8% -10%, rgba(52,211,153,0.06), transparent 60%),
-    radial-gradient(1100px 800px at 120% 0%, rgba(251,191,36,0.04), transparent 55%),
-    var(--bg);
+  background: var(--bg);
   min-height: 100vh;
   color: var(--ink-2);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-[data-resolved-theme="light"] body {
-  background:
-    radial-gradient(1400px 900px at 8% -10%, rgba(5,150,105,0.06), transparent 60%),
-    radial-gradient(1100px 800px at 120% 0%, rgba(180,83,9,0.04), transparent 55%),
-    var(--bg);
-  color: var(--ink-2);
+  line-height: 1.55;
 }
 
 /* === Type === */
@@ -394,12 +386,13 @@ body {
 .editorial { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; font-weight: 600; }
 .num, .mono, kbd { font-family: 'JetBrains Mono', ui-monospace, SF Mono, Menlo, monospace; font-feature-settings: 'tnum', 'zero'; font-variant-numeric: tabular-nums; }
 .label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-muted);
   font-feature-settings: 'cv11';
+  line-height: 1.4;
 }
 .muted { color: var(--ink-muted); }
 .faint { color: var(--ink-faint); }
@@ -441,11 +434,11 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.625rem;
   border-bottom: 1px solid var(--rule);
 }
-.section-h .label { font-size: 11px; }
+.section-h .label { font-size: 10.5px; }
 .section-h h2 {
   font-family: 'Source Serif 4', Georgia, serif;
   font-weight: 600;
@@ -459,11 +452,11 @@ body {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 18px 20px;
   position: relative;
   overflow: hidden;
 }
-.kpi .label { display: block; margin-bottom: 6px; }
+.kpi .label { display: block; margin-bottom: 8px; }
 .kpi .value {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-feature-settings: 'tnum';
@@ -471,16 +464,22 @@ body {
   font-size: 1.875rem;
   font-weight: 600;
   color: var(--ink);
-  line-height: 1.1;
+  line-height: 1.05;
   letter-spacing: -0.02em;
 }
 .kpi .sub {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--ink-muted);
-  margin-top: 4px;
-  letter-spacing: 0.02em;
+  margin-top: 6px;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
 }
 .kpi.kpi-lg .value { font-size: 2.5rem; }
+.kpi.kpi-bare {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
 
 /* === Quote hero === */
 .hero-quote {
@@ -596,15 +595,17 @@ body {
 .data-table thead th {
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-muted);
   text-align: left;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-bottom: 1px solid var(--rule);
   background: transparent;
   white-space: nowrap;
 }
+.data-table thead th.text-right { text-align: right; }
+.data-table thead th.text-center { text-align: center; }
 .data-table tbody td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--rule);
@@ -699,11 +700,55 @@ body {
   transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 .ticker-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow: var(--shadow-glow);
-  border-color: rgba(52, 211, 153, 0.40);
+  border-color: rgba(52, 211, 153, 0.32);
 }
-[data-resolved-theme="light"] .ticker-card:hover { border-color: rgba(5, 150, 105, 0.45); }
+[data-resolved-theme="light"] .ticker-card:hover { border-color: rgba(5, 150, 105, 0.36); }
+
+/* === Ticker row (inline list, default browse view in v0.6) === */
+.ticker-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.ticker-table thead th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+  background: transparent;
+  position: sticky; top: 56px; z-index: 5;
+  background: var(--bg);
+}
+.ticker-table thead th.right { text-align: right; }
+.ticker-table tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  vertical-align: middle;
+}
+.ticker-table tbody tr {
+  transition: background-color 100ms ease;
+  cursor: pointer;
+}
+.ticker-table tbody tr:hover td { background: rgba(52,211,153,0.04); }
+[data-resolved-theme="light"] .ticker-table tbody tr:hover td { background: rgba(5,150,105,0.04); }
+.ticker-table .num-cell { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.ticker-table .ticker-cell { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.ticker-table tbody tr:last-child td { border-bottom: 0; }
+.ticker-table .name-cell { color: var(--ink-3); max-width: 0; }
+.ticker-table .name-cell .name { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ticker-table .name-cell .cat { font-size: 10.5px; color: var(--ink-muted); margin-top: 1px; letter-spacing: 0.04em; text-transform: uppercase; }
+.ticker-table .grade-cell { width: 32px; }
+.ticker-table .grade-cell .grade { width: 28px; height: 28px; font-size: 13px; border-radius: 6px; }
+.ticker-table .spark-cell { width: 90px; opacity: 0.85; }
+.ticker-table .spark-cell canvas { height: 22px; width: 100%; display: block; }
 
 /* sparkline canvas wrappers */
 .sparkline { height: 28px; width: 100%; display: block; }
@@ -728,22 +773,24 @@ body {
   position: sticky; top: 0; z-index: 30;
 }
 .app-header .brand-mark {
-  width: 30px; height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  color: #0a0d14;
+  color: var(--bg);
   font-weight: 700;
 }
+[data-resolved-theme="light"] .app-header .brand-mark { color: #ffffff; }
 .app-header nav a {
   display: inline-flex; align-items: center;
-  padding: 18px 14px;
-  font-size: 13.5px;
+  padding: 16px 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--ink-muted);
   border-bottom: 2px solid transparent;
   text-decoration: none;
   transition: color 100ms ease, border-color 100ms ease;
+  letter-spacing: -0.005em;
 }
 .app-header nav a:hover { color: var(--ink); }
 .app-header nav a.is-active {
@@ -982,16 +1029,13 @@ ${opts.head ?? ''}
 <body>
   <header class="app-header glass-strong">
     <div class="max-w-[1280px] mx-auto px-6 flex items-center gap-6">
-      <a href="/" class="flex items-center gap-2 py-3" style="text-decoration:none;color:inherit;">
+      <a href="/" class="flex items-center gap-2.5 py-3" style="text-decoration:none;color:inherit;">
         <div class="brand-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" class="w-4 h-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" class="w-3.5 h-3.5">
             <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
           </svg>
         </div>
-        <div class="flex items-baseline gap-2">
-          <span class="display text-[18px] ink">dividend-dash</span>
-          <span class="text-[10px] muted font-mono">v0.5</span>
-        </div>
+        <span class="display text-[17px] ink" style="letter-spacing:-0.015em;">dividend-dash</span>
       </a>
       <nav class="flex items-center gap-0 ml-2">${navHtml}</nav>
       <div class="flex-1"></div>
@@ -1028,12 +1072,12 @@ ${opts.head ?? ''}
       <ul id="dd-cmdk-results" class="max-h-[60vh] overflow-y-auto"></ul>
       <div class="px-4 py-2 text-[11px] muted flex items-center justify-between" style="border-top:1px solid var(--rule);">
         <span><kbd class="font-mono">↑↓</kbd> navigate · <kbd class="font-mono">↵</kbd> open</span>
-        <span class="num">v0.5</span>
+        <span class="text-[10px] faint">esc to close</span>
       </div>
     </div>
   </div>
 
-  <main class="max-w-[1280px] mx-auto px-6 py-8">
+  <main class="max-w-[1280px] mx-auto px-6 py-10">
     ${opts.body}
   </main>
 
