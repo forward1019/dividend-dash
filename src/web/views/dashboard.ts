@@ -342,10 +342,13 @@ export function renderDashboard(data: DashboardData): string {
               if (show) visible++;
             }
             const visibleEls = elArr.filter((el) => el.style.display !== 'none');
+            // dataset keys are lowercased (data-forwardyield → dataset.forwardyield);
+            // the sortBy values are camelCase to read well in the dropdown.
+            const key = this.sortBy.toLowerCase();
             visibleEls.sort((a, b) => {
               if (this.sortBy === 'ticker') return a.dataset.ticker.localeCompare(b.dataset.ticker);
-              const av = parseFloat(a.dataset[this.sortBy]) || 0;
-              const bv = parseFloat(b.dataset[this.sortBy]) || 0;
+              const av = parseFloat(a.dataset[key]) || 0;
+              const bv = parseFloat(b.dataset[key]) || 0;
               return bv - av;
             });
             const parent = sel ? document.getElementById(sel) : null;
